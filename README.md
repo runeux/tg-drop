@@ -12,14 +12,9 @@
 
 drop anywhere to upload. click a code to copy. enter it on another device to download.
 
-password protected uploads · telegram storage · up to 2 gb per file · manual removal
+password protected uploads · telegram storage · saved messages sync · manual removal
 
-<details>
-<summary>uploads</summary>
 
-<img src="docs/uploads.png" alt="drop — file list and copyable codes" width="960" />
-
-</details>
 
 ### run
 

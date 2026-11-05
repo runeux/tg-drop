@@ -7,16 +7,17 @@ import {
 } from 'react';
 import Uppy, { type UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
-import { ArrowUpFromLine, LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { z } from 'zod';
 import { filesResponseSchema, type DropFile } from '../shared/files';
 import { api, ApiError, message, okSchema } from './api';
-import { FileRow, SavedFile } from './FileRow';
+import { SavedFile } from './FileRow';
 
-type UploadMeta = { uploadId: string };
+type UploadMeta = { uploadId: string; createdAt: number; order: number };
 type UploadBody = { id: string };
 type LocalFile = UppyFile<UploadMeta, UploadBody>;
+type ListedFile = { file: DropFile; order: number; local?: LocalFile };
 
 export default function Uploads({
   maxFileBytes,
@@ -29,11 +30,17 @@ export default function Uploads({
   onPendingReceived: () => void;
   onUnauthorized: () => void;
 }) {
-  const [files, setFiles] = useState<DropFile[]>([]);
+  const [files, setFiles] = useState<ListedFile[]>([]);
   const [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const sequence = useRef(0);
+  const active = useRef(false);
+  const mutationVersion = useRef(0);
+  const refreshRequest = useRef<AbortController | null>(null);
+  const refreshFlight = useRef<Promise<void> | null>(null);
+  const refreshQueued = useRef(false);
   const [uppy] = useState(() =>
     new Uppy<UploadMeta, UploadBody>({
       autoProceed: true,
@@ -74,30 +81,62 @@ export default function Uploads({
   const state = useSyncExternalStore(subscribe, snapshot);
   const localFiles = Object.values(state.files);
 
-  const refresh = useCallback(
-    () =>
-      api('/files', filesResponseSchema)
-        .then((result) => {
-          setFiles(result.files);
-          setLoaded(true);
-          setConnectionError('');
-          for (const local of uppy.getFiles()) {
+  const refresh = useCallback(() => {
+    if (!active.current) return Promise.resolve();
+    refreshQueued.current = true;
+    if (refreshFlight.current) return refreshFlight.current;
+
+    const load = async () => {
+      do {
+        refreshQueued.current = false;
+        const controller = new AbortController();
+        refreshRequest.current = controller;
+        const version = mutationVersion.current;
+        await api('/files', filesResponseSchema, { signal: controller.signal })
+          .then((result) => {
             if (
-              local.progress.uploadComplete &&
-              result.files.some((file) => file.id === local.meta.uploadId)
+              controller.signal.aborted ||
+              version !== mutationVersion.current
             )
-              uppy.removeFile(local.id);
-          }
-        })
-        .catch((error: unknown) => {
-          if (error instanceof ApiError && error.status === 401)
-            onUnauthorized();
-          else setConnectionError(message(error));
-        }),
-    [onUnauthorized, uppy],
-  );
+              return;
+            const localOrder = new Map(
+              uppy
+                .getFiles()
+                .map((file) => [file.meta.uploadId, file.meta.order]),
+            );
+            setFiles((previous) => {
+              const previousOrder = new Map(
+                previous.map(({ file, order }) => [file.id, order]),
+              );
+              return result.files.map((file) => ({
+                file,
+                order:
+                  previousOrder.get(file.id) ??
+                  localOrder.get(file.id) ??
+                  file.createdAt * 1000,
+              }));
+            });
+            setLoaded(true);
+            setConnectionError('');
+          })
+          .catch((error: unknown) => {
+            if (controller.signal.aborted) return;
+            if (error instanceof ApiError && error.status === 401)
+              onUnauthorized();
+            else setConnectionError(message(error));
+          });
+      } while (refreshQueued.current && active.current);
+    };
+
+    refreshFlight.current = load().finally(() => {
+      refreshFlight.current = null;
+      refreshRequest.current = null;
+    });
+    return refreshFlight.current;
+  }, [onUnauthorized, uppy]);
 
   useEffect(() => {
+    active.current = true;
     void refresh();
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh();
@@ -123,6 +162,9 @@ export default function Uploads({
     uppy.on('upload-error', onError);
     uppy.on('restriction-failed', onRestriction);
     return () => {
+      active.current = false;
+      refreshQueued.current = false;
+      refreshRequest.current?.abort();
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
       uppy.off('upload-success', onSuccess);
@@ -133,6 +175,17 @@ export default function Uploads({
 
   useEffect(() => () => uppy.destroy(), [uppy]);
 
+  useEffect(() => {
+    for (const local of uppy.getFiles()) {
+      if (
+        local.progress.uploadComplete &&
+        files.some(({ file }) => file.id === local.meta.uploadId)
+      ) {
+        uppy.removeFile(local.id);
+      }
+    }
+  }, [files, uppy]);
+
   const addFiles = useCallback(
     (selected: File[]) => {
       uppy.addFiles(
@@ -140,7 +193,11 @@ export default function Uploads({
           name: file.name,
           type: file.type,
           data: file,
-          meta: { uploadId: crypto.randomUUID() },
+          meta: {
+            uploadId: crypto.randomUUID(),
+            createdAt: Date.now(),
+            order: Date.now() * 1000 + sequence.current++,
+          },
         })),
       );
     },
@@ -154,8 +211,11 @@ export default function Uploads({
   }, [pendingFiles, onPendingReceived, addFiles]);
 
   async function remove(id: string) {
+    setError('');
     try {
       await api(`/files/${id}`, okSchema, { method: 'DELETE' });
+      mutationVersion.current++;
+      setFiles((current) => current.filter(({ file }) => file.id !== id));
       await refresh();
     } catch (error) {
       setError(message(error));
@@ -163,16 +223,79 @@ export default function Uploads({
   }
 
   async function retry(id: string) {
+    setError('');
     try {
       await api(`/files/${id}/retry`, okSchema, { method: 'POST' });
+      mutationVersion.current++;
+      setFiles((current) =>
+        current.map((entry) =>
+          entry.file.id === id
+            ? {
+                ...entry,
+                file: { ...entry.file, status: 'queued', progress: 0 },
+              }
+            : entry,
+        ),
+      );
       await refresh();
     } catch (error) {
       setError(message(error));
     }
   }
 
-  const visibleLocal = localFiles.filter(
-    (local) => !files.some((file) => file.id === local.meta.uploadId),
+  async function cancel(local: LocalFile) {
+    setError('');
+    uppy.removeFile(local.id);
+    try {
+      await api(`/files/${local.meta.uploadId}`, okSchema, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) {
+        setError(message(error));
+      }
+    }
+    mutationVersion.current++;
+    setFiles((current) =>
+      current.filter(({ file }) => file.id !== local.meta.uploadId),
+    );
+    await refresh();
+  }
+
+  async function retryLocal(local: LocalFile) {
+    setError('');
+    try {
+      await uppy.retryUpload(local.id);
+    } catch (error) {
+      setError(message(error));
+    }
+  }
+
+  const entries = new Map(files.map((entry) => [entry.file.id, entry]));
+  for (const local of localFiles) {
+    if (entries.has(local.meta.uploadId)) continue;
+    entries.set(local.meta.uploadId, {
+      order: local.meta.order,
+      local,
+      file: {
+        id: local.meta.uploadId,
+        name: local.name ?? 'untitled',
+        size: local.size ?? 0,
+        mime: local.type,
+        code: '',
+        createdAt: local.meta.createdAt,
+        status: local.error
+          ? 'failed'
+          : local.progress.uploadStarted
+            ? 'storing'
+            : 'queued',
+        progress: local.progress.percentage ?? 0,
+      },
+    });
+  }
+  const listedFiles = [...entries.values()].sort(
+    (left, right) =>
+      right.order - left.order || left.file.id.localeCompare(right.file.id),
   );
 
   return (
@@ -216,63 +339,27 @@ export default function Uploads({
         </p>
       )}
       <ul className="file-list" aria-label="Files" aria-busy={!loaded}>
-        <AnimatePresence initial={false}>
-          {visibleLocal.map((file) => (
-            <FileRow
-              key={file.meta.uploadId}
-              name={file.name ?? 'untitled'}
-              size={file.size ?? 0}
-              mime={file.type}
-              detail={
-                file.error
-                  ? file.error
-                  : file.progress.uploadComplete
-                    ? 'saving'
-                    : `uploading · ${file.progress.percentage ?? 0}%`
-              }
-              progress={
-                file.error ? undefined : (file.progress.percentage ?? 0)
-              }
-              failed={Boolean(file.error)}
-              actions={
-                <>
-                  {file.error && (
-                    <button
-                      className="icon-button"
-                      aria-label={`Retry ${file.name}`}
-                      onClick={() => {
-                        void uppy.retryUpload(file.id);
-                      }}
-                    >
-                      <RotateCcw size={17} />
-                    </button>
-                  )}
-                  <button
-                    className="icon-button"
-                    aria-label={`Cancel ${file.name}`}
-                    onClick={() => uppy.removeFile(file.id)}
-                  >
-                    <X size={18} />
-                  </button>
-                </>
-              }
-            />
-          ))}
-          {files.map((file) => (
+        <AnimatePresence initial={false} mode="popLayout">
+          {listedFiles.map(({ file, local }) => (
             <SavedFile
               key={file.id}
               file={file}
-              remove={() => {
-                void remove(file.id);
-              }}
-              retry={() => {
-                void retry(file.id);
-              }}
+              local={Boolean(local)}
+              detail={
+                local
+                  ? local.error ||
+                    (local.progress.uploadComplete
+                      ? 'saving'
+                      : `uploading · ${local.progress.percentage ?? 0}%`)
+                  : undefined
+              }
+              remove={local ? () => cancel(local) : () => remove(file.id)}
+              retry={local ? () => retryLocal(local) : () => retry(file.id)}
             />
           ))}
         </AnimatePresence>
       </ul>
-      {!loaded && !error && (
+      {!loaded && !error && !connectionError && (
         <div className="list-loading" aria-label="Loading files">
           <LoaderCircle size={18} className="spinning" />
         </div>

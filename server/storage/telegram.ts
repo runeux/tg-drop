@@ -1,4 +1,5 @@
-import { TelegramClient } from '@mtcute/node';
+import { RawDocument, TelegramClient } from '@mtcute/node';
+import { captionWithCode } from '../telegram-sync.js';
 import { join } from 'node:path';
 import type { Config } from '../config.js';
 import type { FileRecord } from '../database.js';
@@ -29,7 +30,8 @@ export class TelegramStorage implements FileStorage {
     file: FileRecord,
     progress: (percent: number) => void,
   ) {
-    const caption = `tg-drop · ${file.id}`;
+    const marker = `tg-drop · ${file.id}`;
+    const caption = captionWithCode({ text: marker }, file.code);
     const existing = await this.client.searchMessages({
       chatId: 'self',
       query: file.id,
@@ -37,9 +39,19 @@ export class TelegramStorage implements FileStorage {
     });
     const stored = existing.find(
       (message) =>
-        message.text === caption && message.media?.type === 'document',
+        message.text.startsWith(marker) && message.media?.type === 'document',
     );
-    if (stored) return String(stored.id);
+    if (stored) {
+      const original = stored.textWithEntities;
+      const annotated = captionWithCode(original, file.code);
+      if (annotated !== original)
+        await this.client.editMessage({
+          chatId: 'self',
+          message: stored.id,
+          text: annotated,
+        });
+      return String(stored.id);
+    }
     const message = await this.client.sendMedia(
       'self',
       {
@@ -61,7 +73,7 @@ export class TelegramStorage implements FileStorage {
   async open(key: string) {
     // resolve the message each time so telegram file references stay fresh.
     const [message] = await this.client.getMessages('self', Number(key));
-    if (!message?.media || message.media.type !== 'document')
+    if (!message?.media || !(message.media instanceof RawDocument))
       throw new Error('stored file is unavailable');
     return this.client.downloadAsNodeStream(message.media);
   }

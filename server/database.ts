@@ -42,6 +42,9 @@ export class FileDatabase {
         );
       })();
     }
+    this.sqlite.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS files_storage_key ON files(storageKey) WHERE storageKey IS NOT NULL',
+    );
     this.db = drizzle(this.sqlite);
     this.db
       .update(files)
@@ -55,6 +58,9 @@ export class FileDatabase {
   }
   get(id: string) {
     return this.db.select().from(files).where(eq(files.id, id)).get();
+  }
+  byStorageKey(key: string) {
+    return this.db.select().from(files).where(eq(files.storageKey, key)).get();
   }
   byCode(code: string) {
     return this.db

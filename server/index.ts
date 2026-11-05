@@ -7,16 +7,22 @@ import { readConfig } from './config.js';
 import { Files } from './files.js';
 import { LocalStorage } from './storage/local.js';
 import { telegramClient, TelegramStorage } from './storage/telegram.js';
+import { TelegramSync, telegramSyncPort } from './telegram-sync.js';
 
 const config = readConfig();
 await mkdir(config.DATA_DIR, { recursive: true, mode: 0o700 });
 const client = config.STORAGE === 'telegram' ? telegramClient(config) : null;
-if (client) await client.getMe();
+const self = client ? await client.start({}) : null;
 const storage = client
   ? new TelegramStorage(client)
   : new LocalStorage(join(config.DATA_DIR, 'objects'));
 const files = new Files(config, storage);
 await files.start();
+const sync =
+  client && self
+    ? new TelegramSync(telegramSyncPort(client, self.id), files.db)
+    : null;
+sync?.start();
 const app = createApp(config, files);
 const server = serve(
   { fetch: app.fetch, hostname: config.HOST, port: config.PORT },
@@ -29,7 +35,11 @@ const shutdown = () => {
   if (closing) return;
   closing = true;
   server.close(() => {
-    void files.close().then(() => process.exit(0));
+    void (async () => {
+      await sync?.stop();
+      await files.close();
+      process.exit(0);
+    })();
   });
 };
 process.on('SIGTERM', shutdown);

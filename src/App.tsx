@@ -27,6 +27,11 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const dragDepth = useRef(0);
+  const uploadChoice = useRef<HTMLButtonElement>(null);
+  const downloadChoice = useRef<HTMLButtonElement>(null);
+  const homeAction = useRef<'upload' | 'download'>('upload');
+  const uploadStage = useRef<HTMLDivElement>(null);
+  const hasNavigated = useRef(false);
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -40,8 +45,20 @@ export function App() {
       });
   }, []);
 
+  useEffect(() => {
+    if (screen === 'home' && hasNavigated.current) {
+      const choice =
+        homeAction.current === 'upload' ? uploadChoice : downloadChoice;
+      choice.current?.focus({ preventScroll: true });
+    } else if (screen === 'upload') {
+      uploadStage.current?.focus({ preventScroll: true });
+    }
+    if (screen !== 'home') hasNavigated.current = true;
+  }, [screen]);
+
   const acceptFiles = useCallback(
     (files: File[]) => {
+      homeAction.current = 'upload';
       setPendingFiles((pending) => [...pending, ...files]);
       setScreen(authenticated ? 'upload' : 'password');
     },
@@ -105,7 +122,7 @@ export function App() {
 
   return (
     <>
-      <main className={screen === 'upload' ? 'app workspace' : 'app centered'}>
+      <main className="app">
         <AnimatePresence initial={false}>
           {screen !== 'home' && (
             <motion.button
@@ -115,88 +132,115 @@ export function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              whileTap={{ scale: 0.92 }}
             >
               <ArrowLeft size={21} />
             </motion.button>
           )}
         </AnimatePresence>
-        <AnimatePresence initial={false} mode="popLayout">
-          {screen !== 'upload' && (
-            <motion.div
-              className={`screen screen-${screen}`}
-              key={screen}
-              initial={{
-                opacity: 0,
-                y: reducedMotion ? 0 : 8,
-                scale: reducedMotion ? 1 : 0.985,
-              }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: reducedMotion ? 0 : -5 }}
-            >
-              {screen === 'home' && (
-                <div className="choices">
-                  <motion.button
-                    className="choice"
-                    whileTap={{ scale: 0.975 }}
-                    onClick={() =>
-                      setScreen(authenticated ? 'upload' : 'password')
-                    }
-                  >
-                    <span className="choice-icon">
-                      <ArrowUpFromLine strokeWidth={1.35} />
-                    </span>
-                    <span>upload</span>
-                  </motion.button>
-                  <motion.button
-                    className="choice"
-                    whileTap={{ scale: 0.975 }}
-                    onClick={() => setScreen('download')}
-                  >
-                    <span className="choice-icon">
-                      <ArrowDownToLine strokeWidth={1.35} />
-                    </span>
-                    <span>download</span>
-                  </motion.button>
-                </div>
-              )}
-              {screen === 'password' && (
-                <EntryForm
-                  kind="password"
-                  onPassword={() => {
-                    setAuthenticated(true);
-                    setScreen('upload');
-                  }}
-                />
-              )}
-              {screen === 'download' && <EntryForm kind="code" />}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="centered-stage" inert={screen === 'upload'}>
+          <AnimatePresence initial={false}>
+            {screen !== 'upload' && (
+              <motion.div
+                className={`screen screen-${screen}`}
+                key={screen}
+                initial={{
+                  opacity: 0,
+                  y: reducedMotion ? 0 : 8,
+                  scale: reducedMotion ? 1 : 0.985,
+                }}
+                animate={{ opacity: 1, y: 0, scale: 1, pointerEvents: 'auto' }}
+                exit={{
+                  opacity: 0,
+                  y: reducedMotion ? 0 : 8,
+                  scale: reducedMotion ? 1 : 0.985,
+                  pointerEvents: 'none',
+                }}
+              >
+                {screen === 'home' && (
+                  <div className="choices">
+                    <motion.button
+                      ref={uploadChoice}
+                      className="choice"
+                      whileTap={{ scale: 0.975 }}
+                      onClick={() => {
+                        homeAction.current = 'upload';
+                        setScreen(authenticated ? 'upload' : 'password');
+                      }}
+                    >
+                      <span className="choice-icon">
+                        <ArrowUpFromLine strokeWidth={1.35} />
+                      </span>
+                      <span>upload</span>
+                    </motion.button>
+                    <motion.button
+                      ref={downloadChoice}
+                      className="choice"
+                      whileTap={{ scale: 0.975 }}
+                      onClick={() => {
+                        homeAction.current = 'download';
+                        setScreen('download');
+                      }}
+                    >
+                      <span className="choice-icon">
+                        <ArrowDownToLine strokeWidth={1.35} />
+                      </span>
+                      <span>download</span>
+                    </motion.button>
+                  </div>
+                )}
+                {screen === 'password' && (
+                  <EntryForm
+                    kind="password"
+                    onPassword={() => {
+                      setAuthenticated(true);
+                      setScreen('upload');
+                    }}
+                  />
+                )}
+                {screen === 'download' && <EntryForm kind="code" />}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         {authenticated && (
           <motion.div
-            className="screen screen-upload"
-            hidden={screen !== 'upload'}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            ref={uploadStage}
+            className="upload-stage"
+            data-active={screen === 'upload'}
+            inert={screen !== 'upload'}
+            tabIndex={-1}
+            initial={false}
+            animate={screen === 'upload' ? 'visible' : 'hidden'}
+            variants={{
+              visible: { opacity: 1, y: 0, display: 'block' },
+              hidden: {
+                opacity: 0,
+                y: reducedMotion ? 0 : 8,
+                transitionEnd: { display: 'none' },
+              },
+            }}
           >
-            <Suspense
-              fallback={
-                <div className="list-loading">
-                  <LoaderCircle
-                    size={18}
-                    className="spinning"
-                    aria-label="Loading uploads"
-                  />
-                </div>
-              }
-            >
-              <Uploads
-                maxFileBytes={maxFileBytes}
-                pendingFiles={pendingFiles}
-                onPendingReceived={receivedPending}
-                onUnauthorized={unauthorized}
-              />
-            </Suspense>
+            <div className="screen screen-upload">
+              <Suspense
+                fallback={
+                  <div className="list-loading">
+                    <LoaderCircle
+                      size={18}
+                      className="spinning"
+                      aria-label="Loading uploads"
+                    />
+                  </div>
+                }
+              >
+                <Uploads
+                  maxFileBytes={maxFileBytes}
+                  pendingFiles={pendingFiles}
+                  onPendingReceived={receivedPending}
+                  onUnauthorized={unauthorized}
+                />
+              </Suspense>
+            </div>
           </motion.div>
         )}
       </main>
@@ -212,6 +256,7 @@ export function App() {
               className="drag-prompt"
               initial={{ scale: 0.96 }}
               animate={{ scale: 1 }}
+              exit={{ scale: 0.96 }}
             >
               <ArrowUpFromLine size={44} strokeWidth={1.4} />
               <span>drop to upload</span>

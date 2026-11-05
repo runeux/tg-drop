@@ -1,40 +1,39 @@
-import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import {
-  Check,
-  Copy,
-  File,
-  FileArchive,
-  FileAudio,
-  FileCode2,
-  FileImage,
-  FileText,
-  FileVideo,
-  RotateCcw,
-  Trash2,
-} from 'lucide-react';
+import { useEffect, useRef, useState, type Ref } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Check, Copy, LoaderCircle, RotateCcw, Trash2, X } from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
+
+type SavedFileProps = {
+  file: DropFile;
+  detail?: string;
+  local?: boolean;
+  remove: () => Promise<void> | void;
+  retry: () => Promise<void> | void;
+  ref?: Ref<HTMLLIElement>;
+};
 
 export function SavedFile({
   file,
+  detail,
+  local,
   remove,
   retry,
-}: {
-  file: DropFile;
-  remove: () => void;
-  retry: () => void;
-}) {
+  ref,
+}: SavedFileProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [busy, setBusy] = useState<'remove' | 'retry' | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
 
   useEffect(
     () => () => {
-      clearTimeout(timer.current);
+      clearTimeout(copyTimer.current);
       clearTimeout(confirmTimer.current);
     },
     [],
@@ -45,82 +44,144 @@ export function SavedFile({
       await navigator.clipboard.writeText(file.code);
       setCopied(true);
       setCopyError(false);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1800);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopyError(true);
     }
   }
 
-  let detail: string;
-  if (file.status === 'queued') detail = 'queued';
-  else if (file.status === 'storing') detail = `saving · ${file.progress}%`;
-  else if (file.status === 'failed') detail = 'couldn’t save';
-  else
-    detail = new Intl.DateTimeFormat('en', {
-      month: 'short',
-      day: 'numeric',
-    }).format(file.createdAt);
+  async function perform(action: 'remove' | 'retry') {
+    if (busy) return;
+    setBusy(action);
+    try {
+      await (action === 'remove' ? remove() : retry());
+    } finally {
+      setBusy(null);
+      setConfirmDelete(false);
+    }
+  }
+
+  const status =
+    detail ??
+    (file.status === 'queued'
+      ? 'queued'
+      : file.status === 'storing'
+        ? `saving · ${file.progress}%`
+        : file.status === 'failed'
+          ? 'couldn’t save'
+          : new Intl.DateTimeFormat('en', {
+              month: 'short',
+              day: 'numeric',
+            }).format(file.createdAt));
+
+  const progress =
+    file.status === 'storing'
+      ? file.progress
+      : file.status === 'queued'
+        ? 0
+        : undefined;
 
   return (
     <FileRow
+      ref={ref}
       name={file.name}
       size={file.size}
-      mime={file.mime}
-      detail={detail}
+      detail={status}
       failed={file.status === 'failed'}
-      progress={
-        file.status === 'storing'
-          ? file.progress
-          : file.status === 'queued'
-            ? 0
-            : undefined
-      }
+      progress={progress}
       code={
         file.status === 'ready' ? (
-          <button
-            className={`file-code ${copied ? 'copied' : ''}`}
+          <motion.button
+            className={`file-code ${copied ? 'copied' : ''} ${copyError ? 'copy-error' : ''}`}
+            whileTap={{ scale: 0.98 }}
             onClick={() => {
               void copy();
             }}
             aria-label={`Copy code ${file.code}`}
             title={
-              copyError ? 'Copy unavailable — select the code' : 'Copy code'
+              copyError
+                ? 'Select the code to copy'
+                : copied
+                  ? 'Copied'
+                  : 'Copy code'
             }
           >
-            <span>{file.code}</span>
-            {copied ? <Check size={13} /> : <Copy size={12} />}
-          </button>
+            <span className="code-value">{file.code}</span>
+            <span className="code-symbol" aria-hidden="true">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={copied ? 'copied' : 'copy'}
+                  initial={{ opacity: 0, scale: 0.75 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.75 }}
+                  transition={{ duration: 0.16 }}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={13} />}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </motion.button>
         ) : undefined
       }
       actions={
         <>
           {file.status === 'failed' && (
-            <button
-              className="icon-button"
+            <motion.button
+              className="row-action"
+              whileTap={{ scale: 0.93 }}
+              disabled={Boolean(busy)}
               aria-label={`Retry ${file.name}`}
-              onClick={retry}
+              title="Retry"
+              onClick={() => {
+                void perform('retry');
+              }}
             >
-              <RotateCcw size={17} />
-            </button>
+              {busy === 'retry' ? (
+                <LoaderCircle size={15} className="spinning" />
+              ) : (
+                <RotateCcw size={15} />
+              )}
+            </motion.button>
           )}
-          <button
-            className={`icon-button delete-button ${confirmDelete ? 'confirm-delete' : ''}`}
-            aria-label={`${confirmDelete ? 'Confirm delete' : 'Delete'} ${file.name}`}
-            title={confirmDelete ? 'Click again to delete' : 'Delete file'}
+          <motion.button
+            className={`row-action remove-action ${confirmDelete ? 'confirm-delete' : ''}`}
+            whileTap={{ scale: 0.93 }}
+            disabled={Boolean(busy)}
+            aria-label={`${local ? 'Cancel' : confirmDelete ? 'Confirm delete' : 'Delete'} ${file.name}`}
+            title={
+              local
+                ? 'Cancel upload'
+                : confirmDelete
+                  ? 'Confirm removal'
+                  : 'Remove file'
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setConfirmDelete(false);
+            }}
             onClick={() => {
-              if (confirmDelete) remove();
-              else {
-                setConfirmDelete(true);
-                confirmTimer.current = setTimeout(
-                  () => setConfirmDelete(false),
-                  3000,
-                );
+              if (local || confirmDelete) {
+                void perform('remove');
+                return;
               }
+              setConfirmDelete(true);
+              clearTimeout(confirmTimer.current);
+              confirmTimer.current = setTimeout(
+                () => setConfirmDelete(false),
+                3000,
+              );
             }}
           >
-            {confirmDelete ? <Check size={17} /> : <Trash2 size={16} />}
-          </button>
+            {busy === 'remove' ? (
+              <LoaderCircle size={15} className="spinning" />
+            ) : local ? (
+              <X size={16} />
+            ) : confirmDelete ? (
+              <Check size={16} />
+            ) : (
+              <Trash2 size={15} strokeWidth={1.5} />
+            )}
+          </motion.button>
         </>
       }
     />
@@ -130,68 +191,67 @@ export function SavedFile({
 export function FileRow({
   name,
   size,
-  mime,
   detail,
   progress,
   failed,
   code,
   actions,
+  ref,
 }: {
   name: string;
   size: number;
-  mime: string;
   detail: string;
   progress?: number;
   failed?: boolean;
   code?: React.ReactNode;
   actions: React.ReactNode;
+  ref?: Ref<HTMLLIElement>;
 }) {
+  const dot = name.lastIndexOf('.');
+  const extension = dot > 0 && name.length - dot <= 16 ? name.slice(dot) : '';
+  const stem = extension ? name.slice(0, dot) : name;
+
   return (
     <motion.li
+      ref={ref}
       layout="position"
       className={`file-row ${failed ? 'file-failed' : ''}`}
-      initial={{ opacity: 0, y: 6 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, height: 0, margin: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
     >
-      <span className="file-icon">{fileIcon(name, mime)}</span>
       <div className="file-info">
         <span className="file-name" title={name}>
-          {name}
+          <span className="file-stem">{stem}</span>
+          {extension && <span className="file-extension">{extension}</span>}
         </span>
         <span className="file-meta">
           <span>{formatSize(size)}</span>
           <span className="meta-dot">·</span>
-          <span>{detail}</span>
+          <span className="file-detail">{detail}</span>
         </span>
-        {code}
-        {progress !== undefined && (
-          <span
-            className="file-progress"
-            role="progressbar"
-            aria-label={`Uploading ${name}`}
-            aria-valuenow={progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <span style={{ transform: `scaleX(${progress / 100})` }} />
-          </span>
-        )}
       </div>
+      {code && <div className="file-code-slot">{code}</div>}
+      {progress !== undefined && (
+        <div
+          className="file-transfer"
+          role="progressbar"
+          aria-label={`Uploading ${name}`}
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <span className="file-progress">
+            <span
+              style={{
+                transform: `scaleX(${Math.max(0, Math.min(100, progress)) / 100})`,
+              }}
+            />
+          </span>
+        </div>
+      )}
       <div className="file-actions">{actions}</div>
     </motion.li>
   );
-}
-
-function fileIcon(name: string, mime: string) {
-  const props = { size: 22, strokeWidth: 1.5 };
-  if (mime.startsWith('image/')) return <FileImage {...props} />;
-  if (mime.startsWith('video/')) return <FileVideo {...props} />;
-  if (mime.startsWith('audio/')) return <FileAudio {...props} />;
-  if (/\.(zip|rar|7z|gz|tar)$/i.test(name)) return <FileArchive {...props} />;
-  if (/\.(js|ts|tsx|jsx|json|py|go|rs|html|css|sh)$/i.test(name))
-    return <FileCode2 {...props} />;
-  if (mime.startsWith('text/') || /\.(pdf|docx?|md|txt)$/i.test(name))
-    return <FileText {...props} />;
-  return <File {...props} />;
 }
