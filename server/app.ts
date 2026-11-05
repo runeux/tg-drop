@@ -50,7 +50,7 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   }) => ({
     name: file.name,
     size: file.size,
-    url: `/api/download/${signToken(config.SESSION_SECRET, 'download', file.id, 10 * 60_000)}`,
+    url: `/api/download/${signToken(config.SESSION_SECRET, 'file-download', file.id, 10 * 60_000)}`,
   });
 
   app.use(
@@ -203,7 +203,7 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     const id = verifyToken(
       config.SESSION_SECRET,
       c.req.param('token'),
-      'download',
+      'file-download',
     );
     if (!id) throw new HttpError(404, 'Link expired. Enter the code again.');
     return sendFile(c, id);

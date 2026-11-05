@@ -4,6 +4,7 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { join } from 'node:path';
 import type { DropFile } from '../shared/files.js';
+import { generateCode } from './security.js';
 
 const files = sqliteTable('files', {
   id: text().primaryKey(),
@@ -46,6 +47,26 @@ export class FileDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS files_storage_key ON files(storageKey) WHERE storageKey IS NOT NULL',
     );
     this.db = drizzle(this.sqlite);
+    this.sqlite.transaction(() => {
+      const existing = this.db
+        .select({ id: files.id, code: files.code })
+        .from(files)
+        .all();
+      for (const file of existing) {
+        if (file.code.replaceAll('-', '').length === 16) continue;
+        let code: string;
+        do {
+          code = generateCode();
+        } while (
+          this.db
+            .select({ id: files.id })
+            .from(files)
+            .where(eq(files.code, code))
+            .get()
+        );
+        this.db.update(files).set({ code }).where(eq(files.id, file.id)).run();
+      }
+    })();
     this.db
       .update(files)
       .set({ status: 'queued' })

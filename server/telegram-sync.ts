@@ -35,6 +35,29 @@ export function captionWithCode(
       caption.text.slice(entity.offset, entity.offset + entity.length) === code,
   );
   if (existing) return caption;
+  const previous = caption.entities?.find(
+    (entity) =>
+      entity._ === 'messageEntityCode' &&
+      entity.offset + entity.length === caption.text.length &&
+      (entity.offset === 0 ||
+        caption.text.slice(0, entity.offset).endsWith('\n\n')) &&
+      /^[2-9A-HJ-NP-Z]{4}(?:-[2-9A-HJ-NP-Z]{4}){2,3}$/.test(
+        caption.text.slice(entity.offset),
+      ),
+  );
+  if (previous) {
+    const delta = code.length - previous.length;
+    return {
+      text: caption.text.slice(0, previous.offset) + code,
+      entities: caption.entities?.map((entity) =>
+        entity === previous
+          ? { ...entity, length: code.length }
+          : entity.offset + entity.length > previous.offset
+            ? { ...entity, length: entity.length + delta }
+            : entity,
+      ),
+    };
+  }
   const prefix = caption.text ? `${caption.text}\n\n` : '';
   return {
     text: `${prefix}${code}`,
@@ -114,7 +137,14 @@ export class TelegramSync {
     this.backfill = (async () => {
       for await (const file of this.port.history()) {
         if (!this.running) break;
-        await this.queue.add(() => this.import(file)).catch((error: unknown) => console.error('telegram caption sync failed', error instanceof Error ? error.message : 'unknown'));
+        await this.queue
+          .add(() => this.import(file))
+          .catch((error: unknown) =>
+            console.error(
+              'telegram caption sync failed',
+              error instanceof Error ? error.message : 'unknown',
+            ),
+          );
       }
     })().catch((error: unknown) =>
       console.error(
@@ -151,7 +181,8 @@ export class TelegramSync {
         record = candidate;
       }
     }
-    if (!record || record.status === 'deleting' || file.editable === false) return;
+    if (!record || record.status === 'deleting' || file.editable === false)
+      return;
     const caption = captionWithCode(file.caption, record.code);
     if (caption !== file.caption) await this.port.edit(file.id, caption);
   }

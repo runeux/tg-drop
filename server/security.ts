@@ -24,7 +24,7 @@ export function generateCode() {
 export function normalizeCode(code: string) {
   const compact = code.toUpperCase().replace(/[\s-]/g, '');
   if (
-    ![12, 16].includes(compact.length) ||
+    compact.length !== 16 ||
     [...compact].some((char) => !alphabet.includes(char))
   )
     return null;

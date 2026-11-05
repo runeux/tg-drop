@@ -12,7 +12,27 @@ import {
 } from '../server/telegram-sync.js';
 import type { TextWithEntities } from '@mtcute/node';
 
-const code = 'ABCD-EFGH-JKLM';
+const code = 'ABCD-EFGH-JKLM-NPQR';
+
+test('caption migration replaces old codes instead of appending them', () => {
+  const old = captionWithCode(
+    {
+      text: '🌙 notes',
+      entities: [{ _: 'messageEntityBold', offset: 3, length: 5 }],
+    },
+    '2345-6789-ABCD',
+  );
+  const updated = captionWithCode(old, code);
+  assert.equal(updated.text, `🌙 notes\n\n${code}`);
+  assert.equal(updated.text.includes('2345-6789-ABCD'), false);
+  assert.deepEqual(updated.entities?.[0], old.entities?.[0]);
+  assert.deepEqual(updated.entities?.[1], {
+    _: 'messageEntityCode',
+    offset: 10,
+    length: code.length,
+  });
+  assert.equal(captionWithCode(updated, code), updated);
+});
 
 test('code captions preserve original text and entities and use UTF-16 offsets', () => {
   const original: TextWithEntities = {

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { FileDatabase } from '../server/database.js';
 
-test('removing retention columns preserves existing files and codes', async () => {
+test('migration preserves files, replaces legacy codes and keeps new codes stable', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tg-drop-migration-'));
   const legacy = new Database(join(directory, 'files.db'));
   legacy.exec(`CREATE TABLE files (
@@ -32,10 +32,19 @@ test('removing retention columns preserves existing files and codes', async () =
   legacy.close();
   const migrated = new FileDatabase(directory);
   try {
-    const file = migrated.byCode('ABCD-EFGH-JKLM');
+    const file = migrated.get('existing-file');
     assert.equal(file?.id, 'existing-file');
     assert.equal(file?.storageKey, 'message-id');
     assert.equal(file?.status, 'ready');
+    assert.ok(file);
+    assert.equal(file.code.replaceAll('-', '').length, 16);
+    assert.equal(migrated.byCode('ABCD-EFGH-JKLM'), undefined);
+    const reopened = new FileDatabase(directory);
+    try {
+      assert.equal(reopened.get(file.id)?.code, file.code);
+    } finally {
+      reopened.close();
+    }
     assert.equal('expiration' in (file ?? {}), false);
     assert.equal('expiresAt' in (file ?? {}), false);
     assert.deepEqual(migrated.garbage(), []);

@@ -18,7 +18,8 @@ test('codes normalize spaces and case, reject ambiguous characters', () => {
   }
   assert.equal(normalizeCode('0000-OOOO-IIII'), null);
   assert.equal(normalizeCode('ABCD'), null);
-  assert.equal(normalizeCode('abcd efgh jklm'), 'ABCD-EFGH-JKLM');
+  assert.equal(normalizeCode('abcd efgh jklm'), null);
+  assert.equal(normalizeCode('abcd efgh jklm npqr'), 'ABCD-EFGH-JKLM-NPQR');
 });
 
 test('password hashes are salted and verified', () => {
