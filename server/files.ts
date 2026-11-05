@@ -1,0 +1,302 @@
+import { createWriteStream } from 'node:fs';
+import { mkdir, readdir, rename, statfs, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { IncomingMessage } from 'node:http';
+import PQueue from 'p-queue';
+import type { Config } from './config.js';
+import { FileDatabase, type FileRecord } from './database.js';
+import type { FileStorage } from './storage/types.js';
+import { expiresAt, type DropFile, type Expiration } from '../shared/files.js';
+import { generateCode } from './security.js';
+import { HttpError } from './errors.js';
+
+export class Files {
+  readonly db: FileDatabase;
+  private queue = new PQueue({ concurrency: 1 });
+  private scheduled = new Set<string>();
+  private progress = new Map<string, number>();
+  private uploads = new Map<string, number>();
+  private downloading = new Set<string>();
+  private collecting: Promise<void> | null = null;
+  private collectAgain = false;
+  private timer?: NodeJS.Timeout;
+
+  constructor(
+    private config: Config,
+    private storage: FileStorage,
+  ) {
+    this.db = new FileDatabase(config.DATA_DIR);
+  }
+
+  path(id: string) {
+    return join(this.config.DATA_DIR, 'staging', id);
+  }
+
+  async start() {
+    await mkdir(join(this.config.DATA_DIR, 'staging'), {
+      recursive: true,
+      mode: 0o700,
+    });
+    const known = new Set(this.db.list().map((file) => file.id));
+    for (const name of await readdir(join(this.config.DATA_DIR, 'staging'))) {
+      if (!known.has(name)) await this.removeStaging(name);
+    }
+    for (const file of this.db.pending()) this.enqueue(file.id);
+    await this.collect();
+    this.timer = setInterval(() => {
+      void this.collect();
+    }, 30_000);
+    this.timer.unref();
+  }
+
+  list(): DropFile[] {
+    return this.db.list().flatMap((file) => {
+      if (
+        file.status === 'deleting' ||
+        (file.expiresAt !== null && file.expiresAt <= Date.now())
+      )
+        return [];
+      return [
+        {
+          id: file.id,
+          name: file.name,
+          size: file.size,
+          mime: file.mime,
+          code: file.status === 'ready' ? file.code : '',
+          expiration: file.expiration,
+          expiresAt: file.expiresAt,
+          createdAt: file.createdAt,
+          status: file.status,
+          progress: this.progress.get(file.id) ?? 0,
+        },
+      ];
+    });
+  }
+
+  async receive(
+    request: IncomingMessage,
+    meta: {
+      id: string;
+      name: string;
+      size: number;
+      expiration: Expiration;
+      mime: string;
+    },
+  ) {
+    if (this.uploads.has(meta.id))
+      throw new HttpError(409, 'This file is already uploading.');
+    const existing = this.db.get(meta.id);
+    if (existing) {
+      request.resume();
+      return existing.id;
+    }
+    const reserved =
+      [...this.uploads.values()].reduce((a, b) => a + b, 0) +
+      this.db
+        .list()
+        .filter((file) => file.status !== 'ready')
+        .reduce((sum, file) => sum + file.size, 0);
+    if (reserved + meta.size > this.config.MAX_STAGING_BYTES)
+      throw new HttpError(507, 'Upload queue is full. Try again shortly.');
+    this.uploads.set(meta.id, meta.size);
+    try {
+      const disk = await statfs(this.config.DATA_DIR);
+      const receiving = [...this.uploads.values()].reduce(
+        (sum, size) => sum + size,
+        0,
+      );
+      if (disk.bavail * disk.bsize < receiving + 256_000_000)
+        throw new HttpError(507, 'Not enough temporary space.');
+      let received = 0;
+      const limit = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          received += chunk.length;
+          callback(
+            received > meta.size
+              ? new HttpError(413, 'File is too large.')
+              : null,
+            chunk,
+          );
+        },
+      });
+      await pipeline(
+        request,
+        limit,
+        createWriteStream(this.path(`${meta.id}.part`), {
+          flags: 'wx',
+          mode: 0o600,
+        }),
+      );
+      if (received !== meta.size)
+        throw new HttpError(400, 'Upload was interrupted. Try again.');
+      await rename(this.path(`${meta.id}.part`), this.path(meta.id));
+      this.db.insert({
+        ...meta,
+        createdAt: Date.now(),
+        expiresAt: null,
+        code: generateCode(),
+        status: 'queued',
+        storageKey: null,
+      });
+      this.enqueue(meta.id);
+      return meta.id;
+    } catch (error) {
+      await this.removeStaging(`${meta.id}.part`);
+      if (!this.db.get(meta.id)) await this.removeStaging(meta.id);
+      throw error;
+    } finally {
+      this.uploads.delete(meta.id);
+    }
+  }
+
+  retry(id: string) {
+    const file = this.db.get(id);
+    if (!file || file.status !== 'failed')
+      throw new HttpError(404, 'File not found.');
+    this.db.update(id, { status: 'queued' });
+    this.enqueue(id);
+  }
+
+  private enqueue(id: string) {
+    if (this.scheduled.has(id)) return;
+    this.scheduled.add(id);
+    void this.queue
+      .add(async () => {
+        const file = this.db.get(id);
+        if (!file || file.status !== 'queued') return;
+        this.db.update(id, { status: 'storing' });
+        try {
+          const key = await this.storage.put(this.path(id), file, (value) =>
+            this.progress.set(id, value),
+          );
+          const deleted = this.db.get(id)?.status === 'deleting';
+          this.db.update(id, {
+            storageKey: key,
+            status: deleted ? 'deleting' : 'ready',
+            expiresAt: expiresAt(file.expiration),
+          });
+        } catch (error) {
+          if (this.db.get(id)?.status !== 'deleting')
+            this.db.update(id, { status: 'failed' });
+          console.error(
+            'file storage failed',
+            id,
+            error instanceof Error ? error.message : 'unknown',
+          );
+        } finally {
+          this.progress.delete(id);
+        }
+        if (this.db.get(id)?.storageKey) {
+          await this.removeStaging(id).catch((error: unknown) =>
+            console.error(
+              'staging cleanup failed',
+              id,
+              error instanceof Error ? error.message : 'unknown',
+            ),
+          );
+        }
+      })
+      .catch((error: unknown) =>
+        console.error(
+          'queue failed',
+          error instanceof Error ? error.name : 'unknown',
+        ),
+      )
+      .finally(() => {
+        this.scheduled.delete(id);
+        void this.collect();
+      });
+  }
+
+  lookup(code: string) {
+    const file = this.db.byCode(code);
+    if (!file || (file.expiresAt !== null && file.expiresAt <= Date.now()))
+      throw new HttpError(404, 'Code not found or expired.');
+    return file;
+  }
+
+  async open(id: string) {
+    const file = this.db.get(id);
+    if (
+      !file ||
+      file.status !== 'ready' ||
+      !file.storageKey ||
+      (file.expiresAt !== null && file.expiresAt <= Date.now())
+    )
+      throw new HttpError(404, 'File not found or expired.');
+    if (this.downloading.has(id))
+      throw new HttpError(409, 'This file is already being downloaded.');
+    this.downloading.add(id);
+    try {
+      const stream = await this.storage.open(file.storageKey);
+      return { file, stream };
+    } catch (error) {
+      this.downloading.delete(id);
+      throw error;
+    }
+  }
+
+  finishDownload(file: FileRecord, complete: boolean) {
+    if (complete && file.expiration === 'download')
+      this.db.update(file.id, { status: 'deleting' });
+    this.downloading.delete(file.id);
+    void this.collect();
+  }
+
+  delete(id: string) {
+    if (!this.db.get(id)) throw new HttpError(404, 'File not found.');
+    if (this.downloading.has(id))
+      throw new HttpError(409, 'Wait for the download to finish.');
+    this.db.update(id, { status: 'deleting' });
+    void this.collect();
+  }
+
+  collect(): Promise<void> {
+    this.collectAgain = true;
+    if (this.collecting) return this.collecting;
+    this.collecting = (async () => {
+      do {
+        this.collectAgain = false;
+        await this.sweep();
+      } while (this.collectAgain);
+    })().finally(() => {
+      this.collecting = null;
+    });
+    return this.collecting;
+  }
+
+  private async sweep() {
+    for (const file of this.db.garbage()) {
+      if (this.scheduled.has(file.id) || this.downloading.has(file.id))
+        continue;
+      this.db.update(file.id, { status: 'deleting' });
+      try {
+        if (file.storageKey) await this.storage.remove(file.storageKey);
+        await this.removeStaging(file.id);
+        this.db.remove(file.id);
+      } catch (error) {
+        console.error(
+          'cleanup failed',
+          file.id,
+          error instanceof Error ? error.name : 'unknown',
+        );
+      }
+    }
+  }
+
+  private async removeStaging(name: string) {
+    await unlink(this.path(name)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+
+  async close() {
+    clearInterval(this.timer);
+    await this.queue.onIdle();
+    await this.collect();
+    await this.storage.close();
+    this.db.close();
+  }
+}

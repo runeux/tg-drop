@@ -1,0 +1,7 @@
+f.mythra.pw {
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8787 {
+        flush_interval -1
+    }
+}
