@@ -350,6 +350,7 @@ test('failed storage can be retried without uploading the browser file again', a
 test('an interrupted one-time download retains its code and releases the transfer lock', async () => {
   class SlowStorage extends LocalStorage {
     override async open(key: string) {
+      await setTimeout(80);
       const source = await super.open(key);
       return Readable.from(
         (async function* () {
@@ -375,6 +376,17 @@ test('an interrupted one-time download retains its code and releases the transfe
       'x'.repeat(4096),
     );
     const grant = await context.lookup(file);
+    const beforeHeaders = new AbortController();
+    const abandoned = fetch(context.origin + grant.url, {
+      signal: beforeHeaders.signal,
+    });
+    await setTimeout(20);
+    beforeHeaders.abort();
+    await assert.rejects(
+      abandoned,
+      (error: unknown) => error instanceof Error && error.name === 'AbortError',
+    );
+    await setTimeout(100);
     const abort = new AbortController();
     const response = await fetch(context.origin + grant.url, {
       signal: abort.signal,

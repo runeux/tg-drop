@@ -148,6 +148,11 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     if (c.req.header('sec-purpose')?.includes('prefetch'))
       throw new HttpError(403, 'Prefetch is disabled.');
     const { file, stream } = await files.open(id);
+    if (c.env.outgoing.destroyed || c.req.raw.signal.aborted) {
+      stream.destroy();
+      files.finishDownload(file, false);
+      return c.body(null, 400);
+    }
     let sent = 0;
     let finished = false;
     const settle = (complete: boolean) => {
