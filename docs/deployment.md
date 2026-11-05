@@ -32,7 +32,7 @@ ssh aeza 'cd /srv/tg-drop/app && docker compose logs --tail=100'
 
 - files stream to temporary disk, then enter a persistent, sequential telegram queue. codes appear after telegram confirms storage.
 - staging is limited to 2.5 gb; each file is limited to 2 gb. uploads also check free disk space and keep a 256 mb reserve.
-- until download means a complete server-side transfer. an interrupted transfer retains the code. one transfer per file runs at a time.
+- until download means a complete server-side transfer. an interrupted transfer retains the code. one-time files allow one active transfer; persistent files allow concurrent downloads.
 - time-based retention begins when telegram finishes saving. one month uses a calendar month, clamped to the last day when needed.
 - expired files become inaccessible immediately. cleanup retries telegram deletion every 30 seconds; unavailable telegram storage delays physical deletion.
 - telegram stores the original documents in saved messages. manually deleting them there makes those files unavailable.

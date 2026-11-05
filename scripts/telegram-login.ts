@@ -23,7 +23,10 @@ const server = createServer(async (req, res) => {
   res.setHeader('X-Frame-Options', 'DENY');
   if (req.method === 'GET' && req.url === '/status') {
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ qr, done, password: Boolean(passwordResolve) }));
+    const status = { qr, done, password: Boolean(passwordResolve) };
+    res.end(JSON.stringify(status), () => {
+      if (status.done) server.close();
+    });
     return;
   }
   if (req.method === 'POST' && req.url === '/password') {
@@ -56,7 +59,7 @@ const server = createServer(async (req, res) => {
     <style>:root{color-scheme:dark;font-family:system-ui;background:#090909;color:#eee}body{min-height:90vh;display:grid;place-items:center;margin:0}main{text-align:center}img{width:280px;border-radius:20px}p{color:#aaa;font-size:14px}input,button{font:inherit;border:0;background:#242424;color:#eee;border-radius:12px;padding:14px}button{cursor:pointer}form[hidden],img[hidden]{display:none}</style>
     <main><img id="qr" alt="telegram login qr"><p id="label">telegram → settings → devices → link desktop device</p><form hidden><input type="password" placeholder="2FA password" autocomplete="current-password" aria-label="Telegram 2FA password" required><button>→</button></form></main>
     <script>const image=document.querySelector('img'),form=document.querySelector('form'),label=document.querySelector('p');
-    setInterval(async()=>{const s=await fetch('/status').then(r=>r.json());if(s.qr&&image.src!==s.qr)image.src=s.qr;image.hidden=s.password||s.done;form.hidden=!s.password;label.textContent=s.done?'connected ✓':s.password?'telegram 2FA':'telegram → settings → devices → link desktop device'},1000);
+    const timer=setInterval(async()=>{const s=await fetch('/status').then(r=>r.json());if(s.qr&&image.src!==s.qr)image.src=s.qr;image.hidden=s.password||s.done;form.hidden=!s.password;label.textContent=s.done?'connected ✓':s.password?'telegram 2FA':'telegram → settings → devices → link desktop device';if(s.done)clearInterval(timer)},1000);
     form.onsubmit=async e=>{e.preventDefault();await fetch('/password',{method:'POST',headers:{'Content-Type':'text/plain'},body:form.querySelector('input').value});form.reset()};</script></html>`);
 });
 server.listen(port, '127.0.0.1', () =>
@@ -76,8 +79,8 @@ try {
       }),
     invalidCodeCallback: () => console.log('invalid password; try again'),
   });
-  done = true;
   await client.destroy();
+  done = true;
   console.log('telegram connected');
 } catch (error) {
   console.error(

@@ -18,7 +18,7 @@ export class Files {
   private scheduled = new Set<string>();
   private progress = new Map<string, number>();
   private uploads = new Map<string, number>();
-  private downloading = new Set<string>();
+  private downloading = new Map<string, number>();
   private collecting: Promise<void> | null = null;
   private collectAgain = false;
   private timer?: NodeJS.Timeout;
@@ -226,14 +226,14 @@ export class Files {
       (file.expiresAt !== null && file.expiresAt <= Date.now())
     )
       throw new HttpError(404, 'File not found or expired.');
-    if (this.downloading.has(id))
+    if (file.expiration === 'download' && this.downloading.has(id))
       throw new HttpError(409, 'This file is already being downloaded.');
-    this.downloading.add(id);
+    this.downloading.set(id, (this.downloading.get(id) ?? 0) + 1);
     try {
       const stream = await this.storage.open(file.storageKey);
       return { file, stream };
     } catch (error) {
-      this.downloading.delete(id);
+      this.releaseDownload(id);
       throw error;
     }
   }
@@ -241,8 +241,14 @@ export class Files {
   finishDownload(file: FileRecord, complete: boolean) {
     if (complete && file.expiration === 'download')
       this.db.update(file.id, { status: 'deleting' });
-    this.downloading.delete(file.id);
+    this.releaseDownload(file.id);
     void this.collect();
+  }
+
+  private releaseDownload(id: string) {
+    const remaining = (this.downloading.get(id) ?? 1) - 1;
+    if (remaining > 0) this.downloading.set(id, remaining);
+    else this.downloading.delete(id);
   }
 
   delete(id: string) {

@@ -400,3 +400,26 @@ test('an interrupted one-time download retains its code and releases the transfe
     await context.close();
   }
 });
+
+test('persistent downloads can overlap and deletion waits for every transfer', async () => {
+  const context = await setup();
+  try {
+    await context.login();
+    const file = await context.upload('never');
+    const [first, second] = await Promise.all([
+      context.files.open(file.id),
+      context.files.open(file.id),
+    ]);
+    assert.throws(() => context.files.delete(file.id), /Wait for the download/);
+    first.stream.destroy();
+    context.files.finishDownload(first.file, false);
+    assert.throws(() => context.files.delete(file.id), /Wait for the download/);
+    second.stream.destroy();
+    context.files.finishDownload(second.file, false);
+    context.files.delete(file.id);
+    await context.files.collect();
+    assert.equal(context.files.db.get(file.id), undefined);
+  } finally {
+    await context.close();
+  }
+});
