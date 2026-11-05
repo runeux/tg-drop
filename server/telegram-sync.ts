@@ -16,6 +16,7 @@ export interface SavedDocument {
   mime: string;
   createdAt: number;
   caption: TextWithEntities;
+  editable?: boolean;
 }
 
 export interface TelegramSyncPort {
@@ -61,6 +62,7 @@ export function telegramSyncPort(
       mime: media.mimeType,
       createdAt: message.date.getTime(),
       caption: message.textWithEntities,
+      editable: message.forward === null,
     };
   };
   return {
@@ -149,7 +151,7 @@ export class TelegramSync {
         record = candidate;
       }
     }
-    if (!record || record.status === 'deleting') return;
+    if (!record || record.status === 'deleting' || file.editable === false) return;
     const caption = captionWithCode(file.caption, record.code);
     if (caption !== file.caption) await this.port.edit(file.id, caption);
   }
