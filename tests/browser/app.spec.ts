@@ -76,7 +76,7 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
   });
   const row = page.getByRole('listitem').filter({ hasText: name });
   await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
-  const code = await row.locator('.file-code > span').innerText();
+  const code = await row.locator('.code-value').innerText();
   if (browserName === 'chromium') {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await row.getByRole('button', { name: /Copy code/ }).click();
