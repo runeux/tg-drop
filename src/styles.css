@@ -102,11 +102,8 @@ button {
 .screen[hidden] {
   display: none;
 }
-.screen-home {
-  max-width: 544px;
-}
-.screen-password,
-.screen-download {
+
+.screen-entry {
   max-width: 360px;
 }
 .back {
@@ -129,40 +126,6 @@ button {
 }
 .back {
   color: var(--label-secondary);
-}
-
-.choices {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.choice {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 29px;
-  height: 230px;
-  background: var(--bg-secondary);
-  border: 1px solid #ffffff08;
-  border-radius: 30px;
-  box-shadow:
-    inset 0 1px 0 #ffffff03,
-    0 8px 28px #00000016;
-  font-size: 19px;
-  font-weight: 450;
-  letter-spacing: -0.45px;
-}
-.choice-icon {
-  display: grid;
-  place-items: center;
-  width: 68px;
-  height: 68px;
-  color: #d9d9dc;
-}
-.choice-icon svg {
-  width: 45px;
-  height: 45px;
 }
 
 .entry {
@@ -205,18 +168,7 @@ button {
   color: var(--label-tertiary);
   letter-spacing: -0.2px;
 }
-.entry-form input.code-input {
-  font-family: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, monospace;
-  font-size: 15px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.entry-form input.code-input::placeholder {
-  text-transform: none;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-  font-size: 17px;
-}
+
 .submit-button {
   display: grid;
   place-items: center;
@@ -336,6 +288,7 @@ button {
   gap: 8px;
 }
 .file-name {
+  text-decoration: none;
   display: flex;
   min-width: 0;
   color: #dedee2;
@@ -379,14 +332,14 @@ button {
 .file-code {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 10px;
   width: 100%;
   height: 36px;
-  padding: 0 11px 0 12px;
-  border-radius: 9px;
-  background: #19191b;
-  border: 1px solid #ffffff07;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   color: #b8b8c0;
   text-align: left;
 }
@@ -416,8 +369,6 @@ button {
 }
 .file-code.copied {
   color: #eeeeef;
-  background: #242426;
-  border-color: #ffffff12;
 }
 .file-code.copied .code-symbol {
   color: #eeeeef;
@@ -476,14 +427,20 @@ button {
   color: #db827d;
 }
 .file-code:active {
-  background: #2a2a2d;
+  color: #fff;
+}
+.file-code:focus-visible {
+  outline: none;
+  color: #eee;
+}
+.file-code:focus-visible .code-value {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 .row-action:active {
   background: #ffffff0c;
 }
-.choice:active {
-  background: #202020;
-}
+
 .dropzone:active {
   background: #181818;
 }
@@ -495,13 +452,20 @@ button {
   background: #ccc;
 }
 @media (hover: hover) and (pointer: fine) {
+  .file-name[href]:hover {
+    color: #fff;
+  }
+  .file-name[href]:hover .file-stem,
+  .file-name[href]:hover .file-extension {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: #ffffff55;
+  }
   .file-row:hover {
     background: #ffffff03;
   }
   .file-code:hover {
-    background: #232325;
     color: #dedee4;
-    border-color: #ffffff10;
   }
   .file-code:hover .code-symbol {
     color: #b4b4bf;
@@ -526,10 +490,7 @@ button {
     background: #ffffff07;
     color: var(--label-primary);
   }
-  .choice:hover {
-    background: #1b1b1b;
-    border-color: #ffffff10;
-  }
+
   .dropzone:hover {
     background: #161616;
     border-color: #ffffff35;
@@ -612,22 +573,7 @@ button {
       max(28px, env(safe-area-inset-bottom))
       max(20px, env(safe-area-inset-left));
   }
-  .choices {
-    gap: 12px;
-  }
-  .choice {
-    height: 195px;
-    border-radius: 26px;
-    gap: 22px;
-    font-size: 17px;
-  }
-  .choice-icon svg {
-    width: 39px;
-    height: 39px;
-  }
-  .screen-home {
-    max-width: 380px;
-  }
+
   .dropzone {
     height: 214px;
     border-radius: 24px;
@@ -670,8 +616,7 @@ button {
   }
   .file-code {
     height: 32px;
-    padding-left: 10px;
-    padding-right: 9px;
+    padding: 0;
   }
   .code-value {
     font-size: 10.5px;
@@ -716,7 +661,6 @@ button {
     --label-tertiary: #a0a0a8;
     --separator: #ffffff35;
   }
-  .choice,
   .dropzone,
   .entry-form {
     border-color: #ffffff45;

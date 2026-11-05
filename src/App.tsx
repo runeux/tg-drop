@@ -7,31 +7,22 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import {
-  ArrowDownToLine,
-  ArrowLeft,
-  ArrowUpFromLine,
-  LoaderCircle,
-} from 'lucide-react';
+import { ArrowLeft, ArrowUpFromLine, LoaderCircle } from 'lucide-react';
 import { api, sessionSchema } from './api';
 import { EntryForm } from './EntryForm';
 
 const Uploads = lazy(() => import('./Uploads'));
 
-type Screen = 'home' | 'password' | 'upload' | 'download';
+type Screen = 'entry' | 'upload';
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  const [screen, setScreen] = useState<Screen>('entry');
   const [authenticated, setAuthenticated] = useState(false);
   const [maxFileBytes, setMaxFileBytes] = useState(2_000_000_000);
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const dragDepth = useRef(0);
-  const uploadChoice = useRef<HTMLButtonElement>(null);
-  const downloadChoice = useRef<HTMLButtonElement>(null);
-  const homeAction = useRef<'upload' | 'download'>('upload');
   const uploadStage = useRef<HTMLDivElement>(null);
-  const hasNavigated = useRef(false);
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -46,21 +37,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (screen === 'home' && hasNavigated.current) {
-      const choice =
-        homeAction.current === 'upload' ? uploadChoice : downloadChoice;
-      choice.current?.focus({ preventScroll: true });
-    } else if (screen === 'upload') {
+    if (screen === 'upload')
       uploadStage.current?.focus({ preventScroll: true });
-    }
-    if (screen !== 'home') hasNavigated.current = true;
   }, [screen]);
 
   const acceptFiles = useCallback(
     (files: File[]) => {
-      homeAction.current = 'upload';
       setPendingFiles((pending) => [...pending, ...files]);
-      setScreen(authenticated ? 'upload' : 'password');
+      setScreen(authenticated ? 'upload' : 'entry');
     },
     [authenticated],
   );
@@ -111,20 +95,20 @@ export function App() {
   }, [acceptFiles]);
 
   const back = () => {
-    setScreen('home');
+    setScreen('entry');
     setPendingFiles([]);
   };
   const receivedPending = useCallback(() => setPendingFiles([]), []);
   const unauthorized = useCallback(() => {
     setAuthenticated(false);
-    setScreen('password');
+    setScreen('entry');
   }, []);
 
   return (
     <>
       <main className="app">
         <AnimatePresence initial={false}>
-          {screen !== 'home' && (
+          {screen === 'upload' && (
             <motion.button
               className="back icon-button"
               aria-label="Back"
@@ -142,7 +126,7 @@ export function App() {
           <AnimatePresence initial={false}>
             {screen !== 'upload' && (
               <motion.div
-                className={`screen screen-${screen}`}
+                className="screen screen-entry"
                 key={screen}
                 initial={{
                   opacity: 0,
@@ -157,48 +141,12 @@ export function App() {
                   pointerEvents: 'none',
                 }}
               >
-                {screen === 'home' && (
-                  <div className="choices">
-                    <motion.button
-                      ref={uploadChoice}
-                      className="choice"
-                      whileTap={{ scale: 0.975 }}
-                      onClick={() => {
-                        homeAction.current = 'upload';
-                        setScreen(authenticated ? 'upload' : 'password');
-                      }}
-                    >
-                      <span className="choice-icon">
-                        <ArrowUpFromLine strokeWidth={1.35} />
-                      </span>
-                      <span>upload</span>
-                    </motion.button>
-                    <motion.button
-                      ref={downloadChoice}
-                      className="choice"
-                      whileTap={{ scale: 0.975 }}
-                      onClick={() => {
-                        homeAction.current = 'download';
-                        setScreen('download');
-                      }}
-                    >
-                      <span className="choice-icon">
-                        <ArrowDownToLine strokeWidth={1.35} />
-                      </span>
-                      <span>download</span>
-                    </motion.button>
-                  </div>
-                )}
-                {screen === 'password' && (
-                  <EntryForm
-                    kind="password"
-                    onPassword={() => {
-                      setAuthenticated(true);
-                      setScreen('upload');
-                    }}
-                  />
-                )}
-                {screen === 'download' && <EntryForm kind="code" />}
+                <EntryForm
+                  onPassword={() => {
+                    setAuthenticated(true);
+                    setScreen('upload');
+                  }}
+                />
               </motion.div>
             )}
           </AnimatePresence>

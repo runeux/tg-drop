@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { ArrowDownToLine, ArrowRight, LoaderCircle } from 'lucide-react';
-import { api, message, okSchema } from './api';
-import { downloadSchema, formatSize } from '../shared/files';
+import { api, message } from './api';
+import { resolveSchema, formatSize } from '../shared/files';
 
-export function EntryForm({
-  kind,
-  onPassword,
-}: {
-  kind: 'password' | 'code';
-  onPassword?: () => void;
-}) {
+export function EntryForm({ onPassword }: { onPassword?: () => void }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,21 +34,14 @@ export function EntryForm({
     setBusy(true);
     setError('');
     try {
-      if (kind === 'password') {
-        await api('/session', okSchema, {
-          method: 'POST',
-          body: JSON.stringify({ password: value }),
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        onPassword?.();
-      } else {
-        const result = await api('/lookup', downloadSchema, {
-          method: 'POST',
-          body: JSON.stringify({ code: value }),
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
+      const result = await api('/resolve', resolveSchema, {
+        method: 'POST',
+        body: JSON.stringify({ value }),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (result.kind === 'upload') onPassword?.();
+      else {
         setDownload(result);
         window.location.assign(result.url);
       }
@@ -81,18 +68,17 @@ export function EntryForm({
       >
         <input
           ref={inputRef}
-          aria-label={kind === 'password' ? 'Password' : 'File code'}
+          aria-label="Code or password"
           aria-describedby={error ? 'entry-error' : undefined}
           aria-invalid={Boolean(error)}
-          type={kind === 'password' ? 'password' : 'text'}
-          autoComplete={kind === 'password' ? 'current-password' : 'off'}
-          autoCapitalize={kind === 'code' ? 'characters' : 'none'}
+          type="password"
+          autoComplete="off"
+          autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          className={kind === 'code' ? 'code-input' : ''}
-          placeholder={kind === 'password' ? 'password' : 'file code'}
+          placeholder="code or password"
           value={value}
-          maxLength={kind === 'password' ? 256 : 32}
+          maxLength={256}
           onChange={(event) => {
             request.current?.abort();
             request.current = null;
@@ -105,7 +91,7 @@ export function EntryForm({
         <motion.button
           className="submit-button"
           type="submit"
-          aria-label={kind === 'password' ? 'Unlock uploads' : 'Find file'}
+          aria-label="Continue"
           disabled={busy || !value.trim()}
           whileTap={busy || !value.trim() ? undefined : { scale: 0.95 }}
         >

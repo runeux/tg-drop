@@ -21,11 +21,8 @@ test.afterEach(async ({ page }) => {
 });
 
 async function unlock(page: Page) {
-  await page.getByRole('button', { name: 'upload', exact: true }).click();
-  await page
-    .getByRole('textbox', { name: 'Password', exact: true })
-    .fill('test-password');
-  await page.getByRole('button', { name: 'Unlock uploads' }).click();
+  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(
     page.getByRole('button', { name: /drop files here/ }),
   ).toBeVisible();
@@ -52,22 +49,12 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(
-    page.getByRole('button', { name: 'upload', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'download', exact: true }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'upload', exact: true }).click();
-  await page
-    .getByRole('textbox', { name: 'Password', exact: true })
-    .fill('incorrect');
-  await page.getByRole('button', { name: 'Unlock uploads' }).click();
-  await expect(page.getByRole('alert')).toHaveText('Incorrect password.');
-  await page
-    .getByRole('textbox', { name: 'Password', exact: true })
-    .fill('test-password');
-  await page.getByRole('button', { name: 'Unlock uploads' }).click();
+  await expect(page.getByLabel('Code or password')).toBeVisible();
+  await page.getByLabel('Code or password').fill('incorrect');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Code not found.');
+  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Continue' }).click();
   const name = `notes-${test.info().project.name}.txt`;
   await page.getByLabel('Choose files').setInputFiles({
     name,
@@ -77,6 +64,10 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
   const row = page.getByRole('listitem').filter({ hasText: name });
   await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
   const code = await row.locator('.code-value').innerText();
+  expect(code.replaceAll('-', '')).toHaveLength(16);
+  const nameDownload = page.waitForEvent('download');
+  await row.getByRole('link', { name }).click();
+  expect(await (await nameDownload).failure()).toBeNull();
   if (browserName === 'chromium') {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await row.getByRole('button', { name: /Copy code/ }).click();
@@ -85,27 +76,22 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
     );
   }
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByRole('button', { name: 'download', exact: true }).click();
-  await page
-    .getByRole('textbox', { name: 'File code' })
-    .fill(code.toLowerCase());
+  await page.getByLabel('Code or password').fill(code.toLowerCase());
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Find file' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(name);
   expect(await download.failure()).toBeNull();
   const repeatPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Find file' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
   expect(await (await repeatPromise).failure()).toBeNull();
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByRole('button', { name: 'upload', exact: true }).click();
+  await unlock(page);
   await row.getByRole('button', { name: /^Delete / }).click();
   await row.getByRole('button', { name: /^Confirm delete / }).click();
   await expect(row).toHaveCount(0);
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByRole('button', { name: 'download', exact: true }).click();
-  await page.getByRole('textbox', { name: 'File code' }).fill(code);
-  await page.getByRole('button', { name: 'Find file' }).click();
+  await page.getByLabel('Code or password').fill(code);
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('alert')).toHaveText('Code not found.');
   expect(errors).toEqual([]);
 });
@@ -115,13 +101,9 @@ test('whole-page drop waits for password and files persist until manual removal'
 }) => {
   await page.goto('/');
   await dropFile(page, `pending-${test.info().project.name}.txt`);
-  await expect(
-    page.getByRole('textbox', { name: 'Password', exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole('textbox', { name: 'Password', exact: true })
-    .fill('test-password');
-  await page.getByRole('button', { name: 'Unlock uploads' }).click();
+  await expect(page.getByLabel('Code or password')).toBeVisible();
+  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Continue' }).click();
   const pendingRow = page
     .getByRole('listitem')
     .filter({ hasText: `pending-${test.info().project.name}.txt` });
@@ -136,7 +118,7 @@ test('whole-page drop waits for password and files persist until manual removal'
     persistentRow.getByRole('button', { name: /Copy code/ }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByRole('button', { name: 'upload', exact: true }).click();
+  await unlock(page);
   await expect(persistentRow).toBeVisible();
   await persistentRow.getByRole('button', { name: /^Delete / }).click();
   await persistentRow.getByRole('button', { name: /^Confirm delete / }).click();
@@ -153,17 +135,8 @@ test('keyboard navigation and reduced motion remain usable', async ({
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await page.keyboard.press('Tab');
-  await expect(
-    page.getByRole('button', { name: 'upload', exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(
-    page.getByRole('textbox', { name: 'Password', exact: true }),
-  ).toBeFocused();
-  await page
-    .getByRole('textbox', { name: 'Password', exact: true })
-    .fill('test-password');
+  await expect(page.getByLabel('Code or password')).toBeFocused();
+  await page.getByLabel('Code or password').fill('test-password');
   await page.keyboard.press('Enter');
   await expect(
     page.getByRole('button', { name: /drop files here/ }),
@@ -172,7 +145,7 @@ test('keyboard navigation and reduced motion remain usable', async ({
 
 test('screenshots', async ({ page }, info) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'upload', exact: true }).waitFor();
+  await page.getByLabel('Code or password').waitFor();
   if (info.project.name === 'desktop') {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.screenshot({ path: 'docs/home.png' });

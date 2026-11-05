@@ -13,14 +13,12 @@ import {
 test('codes normalize spaces and case, reject ambiguous characters', () => {
   for (let index = 0; index < 1000; index++) {
     const code = generateCode();
-    assert.match(
-      code,
-      /^[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/,
-    );
+    assert.match(code, /^[2-9A-HJ-NP-Z]{4}(?:-[2-9A-HJ-NP-Z]{4}){3}$/);
     assert.equal(normalizeCode(code.toLowerCase().replaceAll('-', ' ')), code);
   }
   assert.equal(normalizeCode('0000-OOOO-IIII'), null);
   assert.equal(normalizeCode('ABCD'), null);
+  assert.equal(normalizeCode('abcd efgh jklm'), 'ABCD-EFGH-JKLM');
 });
 
 test('password hashes are salted and verified', () => {

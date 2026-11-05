@@ -392,3 +392,42 @@ test('manual removal revokes codes immediately and waits for active transfers be
     await context.close();
   }
 });
+
+test('one entry field resolves the password before file codes, and owner downloads require a session', async () => {
+  const context = await setup();
+  try {
+    const response = await context.request('/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ value: 'test-password' }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { kind: 'upload' });
+    const ownerCookie = response.headers.get('set-cookie')?.split(';')[0];
+    assert.ok(ownerCookie);
+    await context.login();
+    const file = await context.upload();
+    assert.equal(file.code.replaceAll('-', '').length, 16);
+    const code = await context.request('/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ value: file.code.toLowerCase() }),
+    });
+    assert.equal(code.status, 200);
+    const resolved = await code.json();
+    assert.equal(resolved.kind, 'download');
+    assert.equal(resolved.name, file.name);
+    const download = await context.request(`/files/${file.id}/download`);
+    assert.equal(download.status, 200);
+    assert.equal(await download.text(), 'hello from drop');
+    const unauthorized = await fetch(
+      context.origin + `/api/files/${file.id}/download`,
+    );
+    assert.equal(unauthorized.status, 401);
+    const missing = await context.request('/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ value: 'incorrect' }),
+    });
+    assert.equal(missing.status, 404);
+  } finally {
+    await context.close();
+  }
+});

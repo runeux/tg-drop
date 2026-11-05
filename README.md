@@ -7,14 +7,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/home.png" alt="drop — upload and download" width="960" />
+  <img src="docs/home.png" alt="drop — code or password" width="960" />
 </p>
 
-drop anywhere to upload. click a code to copy. enter it on another device to download.
+enter a password to upload or a code to download. drop anywhere. click a filename to download, or its code to copy.
 
 password protected uploads · telegram storage · saved messages sync · manual removal
-
-
 
 ### run
 

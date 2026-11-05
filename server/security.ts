@@ -11,11 +11,11 @@ const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 export function generateCode() {
   // rejection sampling keeps every character equally likely.
   let code = '';
-  while (code.length < 12) {
+  while (code.length < 16) {
     for (const byte of randomBytes(20)) {
       if (byte >= 256 - (256 % alphabet.length)) continue;
       code += alphabet[byte % alphabet.length];
-      if (code.length === 12) break;
+      if (code.length === 16) break;
     }
   }
   return code.match(/.{4}/g)!.join('-');
@@ -24,7 +24,7 @@ export function generateCode() {
 export function normalizeCode(code: string) {
   const compact = code.toUpperCase().replace(/[\s-]/g, '');
   if (
-    compact.length !== 12 ||
+    ![12, 16].includes(compact.length) ||
     [...compact].some((char) => !alphabet.includes(char))
   )
     return null;

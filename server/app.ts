@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { HttpBindings } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -19,6 +19,7 @@ import type { Files } from './files.js';
 
 const SESSION_COOKIE = 'drop_session';
 const SESSION_TTL = 7 * 86_400_000;
+type AppContext = Context<{ Bindings: HttpBindings }>;
 const uploadSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(255),
@@ -29,6 +30,28 @@ const uploadSchema = z.object({
 export function createApp(config: Config, files: Files, serveClient = true) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const limiter = new RateLimiter();
+  const unlock = (c: AppContext) =>
+    setCookie(
+      c,
+      SESSION_COOKIE,
+      signToken(config.SESSION_SECRET, 'session', 'owner', SESSION_TTL),
+      {
+        httpOnly: true,
+        secure: config.ORIGIN.startsWith('https:'),
+        sameSite: 'Strict',
+        path: '/api',
+        maxAge: SESSION_TTL / 1000,
+      },
+    );
+  const downloadDetails = (file: {
+    id: string;
+    name: string;
+    size: number;
+  }) => ({
+    name: file.name,
+    size: file.size,
+    url: `/api/download/${signToken(config.SESSION_SECRET, 'download', file.id, 10 * 60_000)}`,
+  });
 
   app.use(
     '*',
@@ -63,6 +86,26 @@ export function createApp(config: Config, files: Files, serveClient = true) {
 
   app.use('/api/session', bodyLimit({ maxSize: 4096 }));
   app.use('/api/lookup', bodyLimit({ maxSize: 4096 }));
+  app.use('/api/resolve', bodyLimit({ maxSize: 4096 }));
+
+  app.post('/api/resolve', async (c) => {
+    const ip =
+      c.req.header('x-forwarded-for') ??
+      c.env?.incoming.socket.remoteAddress ??
+      'test';
+    limiter.check('resolve:global', 300);
+    limiter.check(`resolve:${ip}`, 20);
+    const { value } = z
+      .object({ value: z.string().min(1).max(256) })
+      .parse(await c.req.json());
+    if (verifyPassword(value, config.PASSWORD_HASH)) {
+      unlock(c);
+      return c.json({ kind: 'upload' });
+    }
+    const code = normalizeCode(value);
+    if (!code) throw new HttpError(404, 'Code not found.');
+    return c.json({ kind: 'download', ...downloadDetails(files.lookup(code)) });
+  });
 
   app.post('/api/session', async (c) => {
     const ip =
@@ -76,18 +119,7 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       .parse(await c.req.json());
     if (!verifyPassword(password, config.PASSWORD_HASH))
       throw new HttpError(401, 'Incorrect password.');
-    setCookie(
-      c,
-      SESSION_COOKIE,
-      signToken(config.SESSION_SECRET, 'session', 'owner', SESSION_TTL),
-      {
-        httpOnly: true,
-        secure: config.ORIGIN.startsWith('https:'),
-        sameSite: 'Strict',
-        path: '/api',
-        maxAge: SESSION_TTL / 1000,
-      },
-    );
+    unlock(c);
     return c.json({ ok: true });
   });
 
@@ -121,26 +153,10 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     const normalized = normalizeCode(code);
     if (!normalized) throw new HttpError(404, 'Code not found.');
     const file = files.lookup(normalized);
-    const token = signToken(
-      config.SESSION_SECRET,
-      'download',
-      file.id,
-      10 * 60_000,
-    );
-    return c.json({
-      name: file.name,
-      size: file.size,
-      url: `/api/download/${token}`,
-    });
+    return c.json(downloadDetails(file));
   });
 
-  app.on(['GET', 'HEAD'], '/api/download/:token', async (c) => {
-    const id = verifyToken(
-      config.SESSION_SECRET,
-      c.req.param('token'),
-      'download',
-    );
-    if (!id) throw new HttpError(404, 'Link expired. Enter the code again.');
+  const sendFile = async (c: AppContext, id: string) => {
     if (c.req.method === 'HEAD') return c.body(null, 405);
     if (c.req.header('sec-purpose')?.includes('prefetch'))
       throw new HttpError(403, 'Prefetch is disabled.');
@@ -181,6 +197,16 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       },
       async () => settle(),
     );
+  };
+
+  app.on(['GET', 'HEAD'], '/api/download/:token', async (c) => {
+    const id = verifyToken(
+      config.SESSION_SECRET,
+      c.req.param('token'),
+      'download',
+    );
+    if (!id) throw new HttpError(404, 'Link expired. Enter the code again.');
+    return sendFile(c, id);
   });
 
   app.use('/api/files/*', async (c, next) => {
@@ -195,6 +221,9 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     await next();
   });
   app.get('/api/files', (c) => c.json({ files: files.list() }));
+  app.on(['GET', 'HEAD'], '/api/files/:id/download', (c) =>
+    sendFile(c, c.req.param('id')),
+  );
   app.post('/api/files', async (c) => {
     let name: string;
     try {

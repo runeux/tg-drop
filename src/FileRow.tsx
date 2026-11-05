@@ -88,6 +88,9 @@ export function SavedFile({
       name={file.name}
       size={file.size}
       detail={status}
+      downloadUrl={
+        file.status === 'ready' ? `/api/files/${file.id}/download` : undefined
+      }
       failed={file.status === 'failed'}
       progress={progress}
       code={
@@ -192,6 +195,7 @@ export function FileRow({
   name,
   size,
   detail,
+  downloadUrl,
   progress,
   failed,
   code,
@@ -201,6 +205,7 @@ export function FileRow({
   name: string;
   size: number;
   detail: string;
+  downloadUrl?: string;
   progress?: number;
   failed?: boolean;
   code?: React.ReactNode;
@@ -222,10 +227,16 @@ export function FileRow({
       transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
     >
       <div className="file-info">
-        <span className="file-name" title={name}>
+        <a
+          className="file-name"
+          title={name}
+          aria-label={name}
+          href={downloadUrl}
+          download
+        >
           <span className="file-stem">{stem}</span>
           {extension && <span className="file-extension">{extension}</span>}
-        </span>
+        </a>
         <span className="file-meta">
           <span>{formatSize(size)}</span>
           <span className="meta-dot">·</span>

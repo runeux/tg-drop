@@ -19,6 +19,11 @@ export const downloadSchema = z.object({
   url: z.string(),
 });
 
+export const resolveSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('upload') }),
+  downloadSchema.extend({ kind: z.literal('download') }),
+]);
+
 export function formatSize(bytes: number) {
   if (bytes < 1000) return `${bytes} B`;
   const unit = Math.min(Math.floor(Math.log10(bytes) / 3), 3);
