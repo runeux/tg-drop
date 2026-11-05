@@ -6,7 +6,6 @@ import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { stream as streamResponse } from 'hono/streaming';
 import { z, ZodError } from 'zod';
-import { expirationSchema } from '../shared/files.js';
 import { HttpError } from './errors.js';
 import {
   normalizeCode,
@@ -24,7 +23,6 @@ const uploadSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1).max(255),
   size: z.coerce.number().int().positive(),
-  expiration: expirationSchema,
   mime: z.string().max(128),
 });
 
@@ -121,7 +119,7 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       .object({ code: z.string().max(64) })
       .parse(await c.req.json());
     const normalized = normalizeCode(code);
-    if (!normalized) throw new HttpError(404, 'Code not found or expired.');
+    if (!normalized) throw new HttpError(404, 'Code not found.');
     const file = files.lookup(normalized);
     const token = signToken(
       config.SESSION_SECRET,
@@ -143,26 +141,24 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       'download',
     );
     if (!id) throw new HttpError(404, 'Link expired. Enter the code again.');
-    // head requests and prefetchers must never consume one-time files.
     if (c.req.method === 'HEAD') return c.body(null, 405);
     if (c.req.header('sec-purpose')?.includes('prefetch'))
       throw new HttpError(403, 'Prefetch is disabled.');
     const { file, stream } = await files.open(id);
     if (c.env.outgoing.destroyed || c.req.raw.signal.aborted) {
       stream.destroy();
-      files.finishDownload(file, false);
+      files.finishDownload(file);
       return c.body(null, 400);
     }
-    let sent = 0;
     let finished = false;
-    const settle = (complete: boolean) => {
+    const settle = () => {
       if (finished) return;
       finished = true;
       stream.destroy();
-      files.finishDownload(file, complete && sent === file.size);
+      files.finishDownload(file);
     };
-    c.env.outgoing.once('finish', () => settle(true));
-    c.env.outgoing.once('close', () => settle(c.env.outgoing.writableFinished));
+    c.env.outgoing.once('finish', settle);
+    c.env.outgoing.once('close', settle);
     const encoded = encodeURIComponent(file.name).replace(
       /['()*]/g,
       (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
@@ -176,15 +172,14 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     return streamResponse(
       c,
       async (body) => {
-        body.onAbort(() => settle(false));
+        body.onAbort(settle);
         for await (const chunk of stream) {
           if (!(chunk instanceof Uint8Array))
             throw new Error('invalid file chunk');
           await body.write(chunk);
-          sent += chunk.length;
         }
       },
-      async () => settle(false),
+      async () => settle(),
     );
   });
 
@@ -219,7 +214,6 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       id: c.req.header('x-upload-id'),
       name,
       size: c.req.header('x-file-size'),
-      expiration: c.req.header('x-expiration'),
       mime: c.req.header('content-type') ?? 'application/octet-stream',
     });
     if (meta.size > config.MAX_FILE_BYTES)

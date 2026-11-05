@@ -1,5 +1,4 @@
-import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { FileStorage } from './types.js';
@@ -15,7 +14,8 @@ export class LocalStorage implements FileStorage {
   }
 
   async open(key: string): Promise<Readable> {
-    return createReadStream(join(this.directory, key));
+    const file = await open(join(this.directory, key), 'r');
+    return file.createReadStream();
   }
   async remove(key: string) {
     await unlink(join(this.directory, key)).catch(

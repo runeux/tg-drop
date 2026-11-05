@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { and, desc, eq, inArray, isNotNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { join } from 'node:path';
-import type { DropFile, Expiration } from '../shared/files.js';
+import type { DropFile } from '../shared/files.js';
 
 const files = sqliteTable('files', {
   id: text().primaryKey(),
@@ -11,8 +11,6 @@ const files = sqliteTable('files', {
   size: integer().notNull(),
   mime: text().notNull(),
   code: text().notNull().unique(),
-  expiration: text().$type<Expiration>().notNull(),
-  expiresAt: integer(),
   createdAt: integer().notNull(),
   status: text().$type<DropFile['status'] | 'deleting'>().notNull(),
   storageKey: text(),
@@ -30,10 +28,20 @@ export class FileDatabase {
     this.sqlite.pragma('busy_timeout = 5000');
     this.sqlite.exec(`CREATE TABLE IF NOT EXISTS files (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, size INTEGER NOT NULL,
-      mime TEXT NOT NULL, code TEXT NOT NULL UNIQUE, expiration TEXT NOT NULL,
-      expiresAt INTEGER, createdAt INTEGER NOT NULL, status TEXT NOT NULL,
+      mime TEXT NOT NULL, code TEXT NOT NULL UNIQUE,
+      createdAt INTEGER NOT NULL, status TEXT NOT NULL,
       storageKey TEXT
-    ); CREATE INDEX IF NOT EXISTS files_expiry ON files(expiresAt);`);
+    );`);
+    const legacy = this.sqlite
+      .prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?')
+      .get('files', 'expiration');
+    if (legacy) {
+      this.sqlite.transaction(() => {
+        this.sqlite.exec(
+          'DROP INDEX IF EXISTS files_expiry; ALTER TABLE files DROP COLUMN expiration; ALTER TABLE files DROP COLUMN expiresAt;',
+        );
+      })();
+    }
     this.db = drizzle(this.sqlite);
     this.db
       .update(files)
@@ -68,7 +76,7 @@ export class FileDatabase {
   }
   update(
     id: string,
-    values: Partial<Pick<FileRecord, 'status' | 'storageKey' | 'expiresAt'>>,
+    values: Partial<Pick<FileRecord, 'status' | 'storageKey'>>,
   ) {
     this.db.update(files).set(values).where(eq(files.id, id)).run();
   }
@@ -76,12 +84,7 @@ export class FileDatabase {
     return this.db
       .select()
       .from(files)
-      .where(
-        or(
-          eq(files.status, 'deleting'),
-          and(isNotNull(files.expiresAt), lt(files.expiresAt, Date.now())),
-        ),
-      )
+      .where(eq(files.status, 'deleting'))
       .all();
   }
   remove(id: string) {

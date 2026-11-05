@@ -10,16 +10,11 @@ import XHRUpload from '@uppy/xhr-upload';
 import { ArrowUpFromLine, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { z } from 'zod';
-import {
-  expirationOptions,
-  filesResponseSchema,
-  type DropFile,
-  type Expiration,
-} from '../shared/files';
+import { filesResponseSchema, type DropFile } from '../shared/files';
 import { api, ApiError, message, okSchema } from './api';
 import { FileRow, SavedFile } from './FileRow';
 
-type UploadMeta = { uploadId: string; expiration: Expiration };
+type UploadMeta = { uploadId: string };
 type UploadBody = { id: string };
 type LocalFile = UppyFile<UploadMeta, UploadBody>;
 
@@ -34,7 +29,6 @@ export default function Uploads({
   onPendingReceived: () => void;
   onUnauthorized: () => void;
 }) {
-  const [expiration, setExpiration] = useState<Expiration>('download');
   const [files, setFiles] = useState<DropFile[]>([]);
   const [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState('');
@@ -54,7 +48,6 @@ export default function Uploads({
         'x-upload-id': file.meta.uploadId,
         'x-file-name': encodeURIComponent(file.name ?? 'untitled'),
         'x-file-size': String(file.size),
-        'x-expiration': file.meta.expiration,
         'Content-Type': file.type || 'application/octet-stream',
       }),
       getResponseData: (xhr) => {
@@ -147,11 +140,11 @@ export default function Uploads({
           name: file.name,
           type: file.type,
           data: file,
-          meta: { uploadId: crypto.randomUUID(), expiration },
+          meta: { uploadId: crypto.randomUUID() },
         })),
       );
     },
-    [expiration, uppy],
+    [uppy],
   );
 
   useEffect(() => {
@@ -207,28 +200,6 @@ export default function Uploads({
         <span>drop files here</span>
         <small>or click to browse</small>
       </motion.button>
-      <fieldset className="expiration">
-        <legend>expiration date</legend>
-        <div className="segments">
-          {expirationOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              aria-pressed={expiration === option.value}
-              onClick={() => setExpiration(option.value)}
-            >
-              {expiration === option.value && (
-                <motion.span
-                  layoutId="expiration-selection"
-                  className="segment-selection"
-                  transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
-                />
-              )}
-              <span>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </fieldset>
       {(error || connectionError) && (
         <p className="workspace-error" role="alert">
           {error || connectionError}

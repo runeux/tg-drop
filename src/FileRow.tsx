@@ -56,11 +56,11 @@ export function SavedFile({
   if (file.status === 'queued') detail = 'queued';
   else if (file.status === 'storing') detail = `saving · ${file.progress}%`;
   else if (file.status === 'failed') detail = 'couldn’t save';
-  else if (file.expiresAt)
-    detail = `expires ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(file.expiresAt)}`;
   else
-    detail =
-      file.expiration === 'download' ? 'until download' : 'never expires';
+    detail = new Intl.DateTimeFormat('en', {
+      month: 'short',
+      day: 'numeric',
+    }).format(file.createdAt);
 
   return (
     <FileRow

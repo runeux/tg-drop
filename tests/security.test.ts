@@ -9,7 +9,6 @@ import {
   verifyPassword,
   verifyToken,
 } from '../server/security.js';
-import { expiresAt } from '../shared/files.js';
 
 test('codes normalize spaces and case, reject ambiguous characters', () => {
   for (let index = 0; index < 1000; index++) {
@@ -48,14 +47,6 @@ test('signed grants reject tampering, expiry, wrong secrets and wrong purposes',
     ),
     null,
   );
-});
-
-test('expiration uses calendar months and preserves the time of day', () => {
-  const january = Date.UTC(2026, 0, 31, 12, 30);
-  assert.equal(expiresAt('month', january), Date.UTC(2026, 1, 28, 12, 30));
-  assert.equal(expiresAt('3days', january), january + 3 * 86_400_000);
-  assert.equal(expiresAt('download', january), null);
-  assert.equal(expiresAt('never', january), null);
 });
 
 test('rate limits reject excessive requests', () => {

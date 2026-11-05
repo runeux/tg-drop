@@ -17,7 +17,6 @@ import {
   downloadSchema,
   filesResponseSchema,
   type DropFile,
-  type Expiration,
 } from '../shared/files.js';
 
 const passwordHash = hashPassword('test-password');
@@ -70,11 +69,7 @@ async function setup(
     assert.ok(cookie);
     return response;
   }
-  async function upload(
-    expiration: Expiration = 'download',
-    name = 'sample.txt',
-    contents = 'hello from drop',
-  ) {
+  async function upload(name = 'sample.txt', contents = 'hello from drop') {
     const id = randomUUID();
     const response = await request('/files', {
       method: 'POST',
@@ -82,7 +77,6 @@ async function setup(
         'x-upload-id': id,
         'x-file-name': encodeURIComponent(name),
         'x-file-size': String(Buffer.byteLength(contents)),
-        'x-expiration': expiration,
         'Content-Type': 'text/plain',
       },
       body: contents,
@@ -167,11 +161,11 @@ test('file list and upload require authentication, writes require the correct or
   }
 });
 
-test('one-time file survives lookup and HEAD, then disappears after a complete download', async () => {
+test('file codes survive repeated downloads until manual deletion', async () => {
   const context = await setup();
   try {
     await context.login();
-    const file = await context.upload('download', 'заметки.txt');
+    const file = await context.upload('заметки.txt');
     const download = await context.lookup(file);
     const path = download.url.replace('/api', '');
     assert.equal((await context.request(path, { method: 'HEAD' })).status, 405);
@@ -188,7 +182,9 @@ test('one-time file survives lookup and HEAD, then disappears after a complete d
       /filename\*=UTF-8''%D0/,
     );
     assert.equal(await response.text(), 'hello from drop');
-    await waitFor(() => context.files.db.get(file.id)?.status !== 'ready');
+    await context.lookup(file);
+    assert.equal(await (await context.request(path)).text(), 'hello from drop');
+    await context.request(`/files/${file.id}`, { method: 'DELETE' });
     assert.equal(
       (
         await context.request('/lookup', {
@@ -204,39 +200,6 @@ test('one-time file survives lookup and HEAD, then disappears after a complete d
   }
 });
 
-test('persistent files remain downloadable, expired files are removed from storage', async () => {
-  const context = await setup();
-  try {
-    await context.login();
-    for (const expiration of ['3days', 'month', 'never'] as const) {
-      const file = await context.upload(expiration);
-      const download = await context.lookup(file);
-      for (let index = 0; index < 2; index++) {
-        const response = await context.request(
-          download.url.replace('/api', ''),
-        );
-        assert.equal(await response.text(), 'hello from drop');
-      }
-      assert.equal(file.expiresAt === null, expiration === 'never');
-      context.files.db.update(file.id, { expiresAt: Date.now() - 1 });
-      assert.equal(
-        (
-          await context.request('/lookup', {
-            method: 'POST',
-            body: JSON.stringify({ code: file.code }),
-          })
-        ).status,
-        404,
-      );
-      await context.files.collect();
-      assert.equal(context.files.db.get(file.id), undefined);
-    }
-    assert.deepEqual(await readdir(join(context.directory, 'objects')), []);
-  } finally {
-    await context.close();
-  }
-});
-
 test('oversized uploads are rejected and deleting a file revokes existing grants', async () => {
   const context = await setup();
   try {
@@ -247,12 +210,11 @@ test('oversized uploads are rejected and deleting a file revokes existing grants
         'x-upload-id': randomUUID(),
         'x-file-name': 'large.bin',
         'x-file-size': '4097',
-        'x-expiration': 'never',
       },
       body: 'x',
     });
     assert.equal(oversized.status, 413);
-    const file = await context.upload('never');
+    const file = await context.upload();
     const download = await context.lookup(file);
     assert.equal(
       (await context.request(`/files/${file.id}`, { method: 'DELETE' })).status,
@@ -291,8 +253,6 @@ test('restart recovers queued uploads and removes abandoned partial files', asyn
     size: 9,
     mime: 'text/plain',
     code: 'ABCD-EFGH-JKLM',
-    expiration: 'never',
-    expiresAt: null,
     createdAt: Date.now(),
     status: 'storing',
     storageKey: null,
@@ -330,7 +290,6 @@ test('failed storage can be retried without uploading the browser file again', a
         'x-upload-id': id,
         'x-file-name': 'retry.txt',
         'x-file-size': '8',
-        'x-expiration': 'never',
       },
     });
     assert.equal(response.status, 201);
@@ -347,12 +306,12 @@ test('failed storage can be retried without uploading the browser file again', a
   }
 });
 
-test('an interrupted one-time download retains its code and releases the transfer lock', async () => {
+test('an interrupted download retains its code and releases active transfer tracking', async () => {
   class SlowStorage extends LocalStorage {
     override async open(key: string) {
       await setTimeout(80);
       const source = await super.open(key);
-      return Readable.from(
+      const stream = Readable.from(
         (async function* () {
           for await (const chunk of source) {
             if (!(chunk instanceof Buffer)) throw new Error('unexpected chunk');
@@ -363,6 +322,8 @@ test('an interrupted one-time download retains its code and releases the transfe
           }
         })(),
       );
+      stream.once('close', () => source.destroy());
+      return stream;
     }
   }
   const context = await setup(
@@ -370,11 +331,7 @@ test('an interrupted one-time download retains its code and releases the transfe
   );
   try {
     await context.login();
-    const file = await context.upload(
-      'download',
-      'interrupted.txt',
-      'x'.repeat(4096),
-    );
+    const file = await context.upload('interrupted.txt', 'x'.repeat(4096));
     const grant = await context.lookup(file);
     const beforeHeaders = new AbortController();
     const abandoned = fetch(context.origin + grant.url, {
@@ -394,10 +351,6 @@ test('an interrupted one-time download retains its code and releases the transfe
     const reader = response.body?.getReader();
     assert.ok(reader);
     await reader.read();
-    assert.equal(
-      (await context.request(grant.url.replace('/api', ''))).status,
-      409,
-    );
     abort.abort();
     await reader.cancel().catch(() => {
       /* abort already cancelled the body. */
@@ -407,28 +360,32 @@ test('an interrupted one-time download retains its code and releases the transfe
     const retried = await context.request(grant.url.replace('/api', ''));
     assert.equal(retried.status, 200);
     assert.equal((await retried.text()).length, 4096);
-    await waitFor(() => context.files.db.get(file.id)?.status !== 'ready');
+    await context.lookup(file);
+    assert.equal(context.files.db.get(file.id)?.status, 'ready');
+    context.files.delete(file.id);
+    await waitFor(() => context.files.db.get(file.id) === undefined);
   } finally {
     await context.close();
   }
 });
 
-test('persistent downloads can overlap and deletion waits for every transfer', async () => {
+test('manual removal revokes codes immediately and waits for active transfers before deleting data', async () => {
   const context = await setup();
   try {
     await context.login();
-    const file = await context.upload('never');
+    const file = await context.upload();
     const [first, second] = await Promise.all([
       context.files.open(file.id),
       context.files.open(file.id),
     ]);
-    assert.throws(() => context.files.delete(file.id), /Wait for the download/);
-    first.stream.destroy();
-    context.files.finishDownload(first.file, false);
-    assert.throws(() => context.files.delete(file.id), /Wait for the download/);
-    second.stream.destroy();
-    context.files.finishDownload(second.file, false);
     context.files.delete(file.id);
+    assert.throws(() => context.files.lookup(file.code), /Code not found/);
+    first.stream.destroy();
+    context.files.finishDownload(first.file);
+    await context.files.collect();
+    assert.equal(context.files.db.get(file.id)?.status, 'deleting');
+    second.stream.destroy();
+    context.files.finishDownload(second.file);
     await context.files.collect();
     assert.equal(context.files.db.get(file.id), undefined);
   } finally {

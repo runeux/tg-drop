@@ -12,12 +12,12 @@
 
 drop anywhere to upload. click a code to copy. enter it on another device to download.
 
-password protected uploads · telegram storage · up to 2 gb per file · four expiration options
+password protected uploads · telegram storage · up to 2 gb per file · manual removal
 
 <details>
 <summary>uploads</summary>
 
-<img src="docs/uploads.png" alt="drop — file list and expiration controls" width="960" />
+<img src="docs/uploads.png" alt="drop — file list and copyable codes" width="960" />
 
 </details>
 
@@ -37,7 +37,7 @@ npm run dev
 ```text
 src/             react interface
 server/          hono api, queue, sqlite, storage
-shared/          schemas and expiration rules
+shared/          file schemas and formatting
 scripts/         setup and telegram login
 tests/           api and browser tests
 deploy/          caddy configuration

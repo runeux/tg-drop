@@ -44,7 +44,7 @@ async function dropFile(page: Page, name: string) {
   }, name);
 }
 
-test('password gate, automatic upload, copy code and automatic one-time download', async ({
+test('password gate, automatic upload, copy code and repeatable automatic downloads', async ({
   page,
   context,
   browserName,
@@ -94,14 +94,23 @@ test('password gate, automatic upload, copy code and automatic one-time download
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(name);
   expect(await download.failure()).toBeNull();
+  const repeatPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Find file' }).click();
-  await expect(page.getByRole('alert')).toHaveText(
-    'Code not found or expired.',
-  );
+  expect(await (await repeatPromise).failure()).toBeNull();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'upload', exact: true }).click();
+  await row.getByRole('button', { name: /^Delete / }).click();
+  await row.getByRole('button', { name: /^Confirm delete / }).click();
+  await expect(row).toHaveCount(0);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'download', exact: true }).click();
+  await page.getByRole('textbox', { name: 'File code' }).fill(code);
+  await page.getByRole('button', { name: 'Find file' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Code not found.');
   expect(errors).toEqual([]);
 });
 
-test('whole-page drop waits for password and expiration applies to the next file', async ({
+test('whole-page drop waits for password and files persist until manual removal', async ({
   page,
 }) => {
   await page.goto('/');
@@ -119,12 +128,10 @@ test('whole-page drop waits for password and expiration applies to the next file
   await expect(
     pendingRow.getByRole('button', { name: /Copy code/ }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'never', exact: true }).click();
   await dropFile(page, `persistent-${test.info().project.name}.txt`);
   const persistentRow = page
     .getByRole('listitem')
     .filter({ hasText: `persistent-${test.info().project.name}.txt` });
-  await expect(persistentRow).toContainText('never expires');
   await expect(
     persistentRow.getByRole('button', { name: /Copy code/ }),
   ).toBeVisible();
@@ -159,7 +166,7 @@ test('keyboard navigation and reduced motion remain usable', async ({
     .fill('test-password');
   await page.keyboard.press('Enter');
   await expect(
-    page.getByRole('group', { name: 'expiration date' }),
+    page.getByRole('button', { name: /drop files here/ }),
   ).toBeVisible();
 });
 
@@ -171,7 +178,6 @@ test('screenshots', async ({ page }, info) => {
     await page.screenshot({ path: 'docs/home.png' });
   }
   await unlock(page);
-  await page.getByRole('button', { name: '1 month', exact: true }).click();
   await page.getByLabel('Choose files').setInputFiles([
     {
       name: 'field-notes.pdf',
@@ -194,10 +200,6 @@ test('screenshots', async ({ page }, info) => {
     await expect(row).toHaveCSS('opacity', '1');
     await expect(row).toHaveCSS('transform', 'none');
   }
-  await expect(page.locator('.segment-selection')).toHaveCSS(
-    'transform',
-    'none',
-  );
   await page.screenshot({
     path:
       info.project.name === 'desktop'
