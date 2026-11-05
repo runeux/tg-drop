@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { filesResponseSchema, type DropFile } from '../shared/files';
 import { api, ApiError, message, okSchema } from './api';
 import { SavedFile } from './FileRow';
+import { validateFile } from './selection';
 
 type UploadMeta = { uploadId: string; createdAt: number; order: number };
 type UploadBody = { id: string };
@@ -51,6 +52,19 @@ export default function Uploads({
       limit: 2,
       timeout: 120_000,
       shouldRetry: (xhr) => xhr.status === 0 || xhr.status >= 500,
+      onAfterResponse: async (xhr) => {
+        if (xhr.status < 400) return;
+        let data: unknown;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          throw new Error('Upload failed. Try again.');
+        }
+        const parsed = z.object({ error: z.string() }).safeParse(data);
+        throw new Error(
+          parsed.success ? parsed.data.error : 'Upload failed. Try again.',
+        );
+      },
       headers: (file) => ({
         'x-upload-id': file.meta.uploadId,
         'x-file-name': encodeURIComponent(file.name ?? 'untitled'),
@@ -59,12 +73,6 @@ export default function Uploads({
       }),
       getResponseData: (xhr) => {
         const data: unknown = JSON.parse(xhr.responseText);
-        if (xhr.status >= 400) {
-          const parsed = z.object({ error: z.string() }).safeParse(data);
-          throw new Error(
-            parsed.success ? parsed.data.error : 'Upload failed. Try again.',
-          );
-        }
         return z.object({ id: z.string() }).parse(data);
       },
     }),
@@ -187,26 +195,44 @@ export default function Uploads({
   }, [files, uppy]);
 
   const addFiles = useCallback(
-    (selected: File[]) => {
-      uppy.addFiles(
-        selected.map((file) => ({
-          name: file.name,
-          type: file.type,
-          data: file,
-          meta: {
-            uploadId: crypto.randomUUID(),
-            createdAt: Date.now(),
-            order: Date.now() * 1000 + sequence.current++,
-          },
-        })),
-      );
-    },
-    [uppy],
+    (selected: File[]) =>
+      Promise.all(
+        selected.map(async (file) => {
+          try {
+            await validateFile(file, maxFileBytes);
+            return { file };
+          } catch (error) {
+            return { error: `${file.name}: ${message(error)}` };
+          }
+        }),
+      ).then((results) => {
+        if (!active.current) return;
+        const accepted = results.flatMap((result) =>
+          result.file ? [result.file] : [],
+        );
+        const errors = results.flatMap((result) =>
+          result.error ? [result.error] : [],
+        );
+        if (errors.length) setError(errors.join('\n'));
+        uppy.addFiles(
+          accepted.map((file) => ({
+            name: file.name,
+            type: file.type,
+            data: file,
+            meta: {
+              uploadId: crypto.randomUUID(),
+              createdAt: Date.now(),
+              order: Date.now() * 1000 + sequence.current++,
+            },
+          })),
+        );
+      }),
+    [uppy, maxFileBytes],
   );
 
   useEffect(() => {
     if (!pendingFiles.length) return;
-    addFiles(pendingFiles);
+    void addFiles(pendingFiles);
     onPendingReceived();
   }, [pendingFiles, onPendingReceived, addFiles]);
 
@@ -308,7 +334,7 @@ export default function Uploads({
         aria-label="Choose files"
         onChange={(event) => {
           setError('');
-          addFiles(Array.from(event.target.files ?? []));
+          void addFiles(Array.from(event.target.files ?? []));
           event.target.value = '';
         }}
       />

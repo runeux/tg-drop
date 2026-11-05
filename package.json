@@ -24,6 +24,7 @@
     "@mtcute/node": "^0.32.7",
     "@uppy/core": "^6.3.1",
     "@uppy/xhr-upload": "^6.0.1",
+    "@zip.js/zip.js": "^2.24.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.16",

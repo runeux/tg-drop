@@ -7,9 +7,10 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, ArrowUpFromLine, LoaderCircle } from 'lucide-react';
+import { ArrowLeft, ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
 import { api, sessionSchema } from './api';
 import { EntryForm } from './EntryForm';
+import { captureDrop, prepareDrop } from './selection';
 
 const Uploads = lazy(() => import('./Uploads'));
 
@@ -18,9 +19,12 @@ type Screen = 'entry' | 'upload';
 export function App() {
   const [screen, setScreen] = useState<Screen>('entry');
   const [authenticated, setAuthenticated] = useState(false);
-  const [maxFileBytes, setMaxFileBytes] = useState(2_000_000_000);
+  const [maxFileBytes, setMaxFileBytes] = useState(4_000_000_000);
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [selectionError, setSelectionError] = useState('');
+  const [preparing, setPreparing] = useState('');
+  const preparingDrop = useRef(false);
   const dragDepth = useRef(0);
   const uploadStage = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -73,8 +77,23 @@ export function App() {
       event.preventDefault();
       dragDepth.current = 0;
       setDragging(false);
-      const files = Array.from(event.dataTransfer?.files ?? []);
-      if (files.length) acceptFiles(files);
+      if (!event.dataTransfer) return;
+      if (preparingDrop.current) {
+        setSelectionError('Wait for the current archive to finish.');
+        return;
+      }
+      const items = captureDrop(event.dataTransfer);
+      preparingDrop.current = true;
+      setSelectionError('');
+      void prepareDrop(items, maxFileBytes, setPreparing)
+        .then(({ files, errors }) => {
+          if (files.length) acceptFiles(files);
+          setSelectionError(errors.join('\n'));
+        })
+        .finally(() => {
+          preparingDrop.current = false;
+          setPreparing('');
+        });
     };
     const reset = () => {
       dragDepth.current = 0;
@@ -92,7 +111,7 @@ export function App() {
       window.removeEventListener('drop', drop);
       window.removeEventListener('blur', reset);
     };
-  }, [acceptFiles]);
+  }, [acceptFiles, maxFileBytes]);
 
   const back = () => {
     setScreen('entry');
@@ -192,6 +211,24 @@ export function App() {
           </motion.div>
         )}
       </main>
+      {(preparing || selectionError) && (
+        <div
+          className="selection-notice"
+          role={selectionError ? 'alert' : 'status'}
+        >
+          {preparing && <LoaderCircle size={16} className="spinning" />}
+          <span>{preparing ? `preparing ${preparing}` : selectionError}</span>
+          {!preparing && (
+            <button
+              className="icon-button"
+              aria-label="Dismiss selection error"
+              onClick={() => setSelectionError('')}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      )}
       <AnimatePresence>
         {dragging && (
           <motion.div

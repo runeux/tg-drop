@@ -62,18 +62,22 @@ export function SavedFile({
     }
   }
 
+  const failure =
+    file.status === 'failed'
+      ? (detail ?? 'Couldn’t save. Try again.')
+      : undefined;
   const status =
-    detail ??
-    (file.status === 'queued'
-      ? 'queued'
-      : file.status === 'storing'
-        ? `saving · ${file.progress}%`
-        : file.status === 'failed'
-          ? 'couldn’t save'
-          : new Intl.DateTimeFormat('en', {
-              month: 'short',
-              day: 'numeric',
-            }).format(file.createdAt));
+    file.status === 'failed'
+      ? undefined
+      : (detail ??
+        (file.status === 'queued'
+          ? 'queued'
+          : file.status === 'storing'
+            ? `saving · ${file.progress}%`
+            : new Intl.DateTimeFormat('en', {
+                month: 'short',
+                day: 'numeric',
+              }).format(file.createdAt)));
 
   const progress =
     file.status === 'storing'
@@ -91,7 +95,7 @@ export function SavedFile({
       downloadUrl={
         file.status === 'ready' ? `/api/files/${file.id}/download` : undefined
       }
-      failed={file.status === 'failed'}
+      error={failure}
       progress={progress}
       code={
         file.status === 'ready' ? (
@@ -197,17 +201,17 @@ export function FileRow({
   detail,
   downloadUrl,
   progress,
-  failed,
+  error,
   code,
   actions,
   ref,
 }: {
   name: string;
   size: number;
-  detail: string;
+  detail?: string;
   downloadUrl?: string;
   progress?: number;
-  failed?: boolean;
+  error?: string;
   code?: React.ReactNode;
   actions: React.ReactNode;
   ref?: Ref<HTMLLIElement>;
@@ -220,7 +224,7 @@ export function FileRow({
     <motion.li
       ref={ref}
       layout="position"
-      className={`file-row ${failed ? 'file-failed' : ''}`}
+      className={`file-row ${error ? 'file-failed' : ''}`}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
@@ -238,9 +242,13 @@ export function FileRow({
           {extension && <span className="file-extension">{extension}</span>}
         </a>
         <span className="file-meta">
-          <span>{formatSize(size)}</span>
-          <span className="meta-dot">·</span>
-          <span className="file-detail">{detail}</span>
+          <span className="file-size">{formatSize(size)}</span>
+          {detail && (
+            <>
+              <span className="meta-dot">·</span>
+              <span className="file-detail">{detail}</span>
+            </>
+          )}
         </span>
       </div>
       {code && <div className="file-code-slot">{code}</div>}
@@ -263,6 +271,11 @@ export function FileRow({
         </div>
       )}
       <div className="file-actions">{actions}</div>
+      {error && (
+        <p className="file-error" role="alert">
+          {error}
+        </p>
+      )}
     </motion.li>
   );
 }

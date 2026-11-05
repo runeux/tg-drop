@@ -30,8 +30,8 @@ ssh aeza 'cd /srv/tg-drop/app && docker compose logs --tail=100'
 
 ## behavior
 
-- files stream to temporary disk, then enter a persistent, sequential telegram queue. codes appear after telegram confirms storage.
-- staging is limited to 2.5 gb; each file is limited to 2 gb. uploads also check free disk space and keep a 256 mb reserve.
+- dropped folders are packaged into ZIP with zip.js in the browser; archive size is checked before packing and uploading. files stream to temporary disk, then enter a persistent, sequential telegram queue. codes appear after telegram confirms storage.
+- staging is limited to 4.5 gb; each file is limited to 4 gb (premium). uploads also check free disk space and keep a 256 mb reserve.
 - files and codes remain available until manual removal. downloads can run concurrently; deletion waits for active transfers.
 - manual removal revokes access immediately. cleanup retries telegram deletion every 30 seconds if telegram is unavailable.
 - documents, video and audio added to saved messages are imported automatically. existing history is scanned in the background. original captions are preserved and the code is appended with inline code formatting.

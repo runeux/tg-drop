@@ -423,8 +423,57 @@ button {
   transform-origin: left;
   transition: transform 160ms linear;
 }
-.file-failed .file-detail {
+.file-size {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.file-failed {
+  row-gap: 12px;
+}
+.file-error {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  margin: 0;
   color: #db827d;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.selection-notice {
+  position: fixed;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(616px, calc(100% - 40px));
+  padding: 12px 16px;
+  border: 1px solid #ffffff10;
+  border-radius: 16px;
+  background: #202022;
+  box-shadow: 0 8px 32px #0006;
+  color: #d1d1d7;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.selection-notice > span {
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.selection-notice > svg {
+  flex-shrink: 0;
+}
+.selection-notice .icon-button {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
 }
 .file-code:active {
   color: #fff;
@@ -507,6 +556,8 @@ button {
   color: var(--danger);
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .workspace-error button {
   flex: 0 0 32px;
@@ -635,6 +686,12 @@ button {
   }
   .file-transfer {
     height: 32px;
+  }
+  .file-error {
+    grid-row: 3;
+  }
+  .file-failed .file-name {
+    padding-right: 76px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

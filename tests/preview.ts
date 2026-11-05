@@ -12,6 +12,7 @@ const directory = await mkdtemp(join(tmpdir(), 'tg-drop-preview-'));
 const config = readConfig({
   DATA_DIR: directory,
   STORAGE: 'local',
+  MAX_FILE_BYTES: '2000000000',
   ORIGIN: 'http://127.0.0.1:4173',
   PASSWORD_HASH: hashPassword('test-password'),
   SESSION_SECRET: 'a'.repeat(64),

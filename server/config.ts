@@ -24,9 +24,9 @@ const schema = z.object({
     .number()
     .int()
     .positive()
-    .max(2_000_000_000)
-    .default(2_000_000_000),
-  MAX_STAGING_BYTES: z.coerce.number().int().positive().default(2_500_000_000),
+    .max(4_000_000_000)
+    .default(4_000_000_000),
+  MAX_STAGING_BYTES: z.coerce.number().int().positive().default(4_500_000_000),
 });
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env) {

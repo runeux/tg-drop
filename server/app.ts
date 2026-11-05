@@ -7,6 +7,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { stream as streamResponse } from 'hono/streaming';
 import { z, ZodError } from 'zod';
 import { HttpError } from './errors.js';
+import { formatSize } from '../shared/files.js';
 import {
   normalizeCode,
   RateLimiter,
@@ -246,7 +247,10 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       mime: c.req.header('content-type') ?? 'application/octet-stream',
     });
     if (meta.size > config.MAX_FILE_BYTES)
-      throw new HttpError(413, 'Maximum file size is 2 GB.');
+      throw new HttpError(
+        413,
+        `Maximum file size is ${formatSize(config.MAX_FILE_BYTES)}.`,
+      );
     const id = await files.receive(c.env.incoming, meta);
     return c.json({ id }, 201);
   });
