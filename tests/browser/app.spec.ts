@@ -1,10 +1,14 @@
+import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 import { filesResponseSchema } from '../../shared/files';
 
 test.beforeEach(async ({ context }, info) => {
   // each isolated browser context represents a different client for rate limiting.
+  const network = createHash('sha256')
+    .update(info.project.name + info.testId)
+    .digest('hex');
   await context.setExtraHTTPHeaders({
-    'X-Forwarded-For': `e2e-${info.project.name}-${info.testId}`,
+    'X-Forwarded-For': `2001:db8:${network.slice(0, 4)}:${network.slice(4, 8)}::1`,
   });
 });
 

@@ -49,3 +49,13 @@ sqlite and the telegram session are required to recover file access. back up `/s
 - the top-left back button revokes the session in sqlite, clears the cookie and unmounts uploads. failed logout stays on the dashboard and shows an error so it can be retried.
 - all `/api/files` routes require a valid session, including listing, upload, owner download, delete and retry. api responses are not cached; writes also require the configured origin.
 - public code lookup intentionally grants access to one shared file without owner login. its signed download link lasts ten minutes; the file code remains valid until manual deletion and never grants file-list access.
+
+## credential attempt limits
+
+- `rate-limiter-flexible` uses the existing sqlite connection; no redis or extra service is required.
+- anonymous password/code submissions share counters across resolve, login and lookup: the third failure per ipv4 address or ipv6 /64 starts a 60-second block; the tenth global failure blocks anonymous credential checks for 60 seconds.
+- counting windows last 60 seconds from the first failure; cooldowns start at the threshold failure, including near the end of a window. rejected requests do not extend cooldowns, and successful requests do not clear counters.
+- valid owner sessions bypass these limits. the dashboard, session restoration and existing download links stay available during anonymous lockouts. a fresh login is blocked even with the correct password until cooldown ends.
+- sqlite preserves limits across restarts; expired rows are removed on attempts. store failures reject anonymous checks with 503. a bounded, single-concurrency queue prevents parallel credential checks from overshooting the budget in this single-process deployment.
+- caddy overwrites `x-forwarded-for` with the connecting client's address. keep the backend bound to localhost; if a cdn is added, revisit trusted client-ip handling.
+- throttled responses include `retry-after` and a human-readable wait time in the existing entry-form error. no submitted credentials are stored in counters.

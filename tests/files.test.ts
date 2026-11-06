@@ -476,3 +476,76 @@ test('persistent sessions renew, reject forged cookies, and cannot be replayed a
     await context.close();
   }
 });
+
+test('all credential endpoints share failure limits and authenticated owners bypass global blocks', async () => {
+  const context = await setup();
+  try {
+    await context.login();
+    const routes = [
+      ['/resolve', { value: 'wrong' }],
+      ['/session', { password: 'wrong' }],
+      ['/lookup', { code: 'wrong' }],
+    ] as const;
+    for (let index = 0; index < 10; index++) {
+      const [path, body] = routes[index % routes.length]!;
+      const response = await context.request(path, {
+        method: 'POST',
+        headers: { Cookie: '', 'X-Forwarded-For': `192.0.2.${index}` },
+        body: JSON.stringify(body),
+      });
+      assert.equal(
+        response.status,
+        index === 9 ? 429 : path === '/session' ? 401 : 404,
+      );
+      if (index === 9) assert.equal(response.headers.get('retry-after'), '60');
+    }
+    const response = await context.request('/resolve', {
+      method: 'POST',
+      headers: { Cookie: '', 'X-Forwarded-For': '203.0.113.1' },
+      body: JSON.stringify({ value: 'test-password' }),
+    });
+    assert.equal(response.status, 429);
+    assert.equal((await context.request('/files')).status, 200);
+    assert.equal(
+      (
+        await context.request('/lookup', {
+          method: 'POST',
+          body: JSON.stringify({ code: 'wrong' }),
+        })
+      ).status,
+      404,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test('switching credential endpoints cannot bypass the personal cooldown', async () => {
+  const context = await setup();
+  try {
+    const attempts = [
+      ['/resolve', { value: 'wrong' }],
+      ['/session', { password: 'wrong' }],
+      ['/lookup', { code: 'wrong' }],
+    ] as const;
+    for (const [index, [path, body]] of attempts.entries()) {
+      const response = await context.request(path, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      assert.equal(
+        response.status,
+        index === 2 ? 429 : index === 1 ? 401 : 404,
+      );
+    }
+    const response = await context.request('/session', {
+      method: 'POST',
+      body: JSON.stringify({ password: 'test-password' }),
+    });
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '60');
+    assert.equal(response.headers.get('set-cookie'), null);
+  } finally {
+    await context.close();
+  }
+});

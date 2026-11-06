@@ -4,7 +4,6 @@ import {
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
-import { HttpError } from './errors.js';
 
 const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -93,21 +92,5 @@ export function verifyToken(
     return parsed.subject;
   } catch {
     return null;
-  }
-}
-
-export class RateLimiter {
-  private buckets = new Map<string, { count: number; reset: number }>();
-
-  check(key: string, max: number, windowMs = 60_000) {
-    const now = Date.now();
-    for (const [entry, bucket] of this.buckets) {
-      if (bucket.reset <= now) this.buckets.delete(entry);
-    }
-    const bucket = this.buckets.get(key) ?? { count: 0, reset: now + windowMs };
-    bucket.count++;
-    this.buckets.set(key, bucket);
-    if (bucket.count > max)
-      throw new HttpError(429, 'Too many attempts. Try again in a minute.');
   }
 }

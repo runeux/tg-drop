@@ -4,7 +4,6 @@ import {
   generateCode,
   hashPassword,
   normalizeCode,
-  RateLimiter,
   signToken,
   verifyPassword,
   verifyToken,
@@ -46,12 +45,4 @@ test('signed grants reject tampering, expiry, wrong secrets and wrong purposes',
     ),
     null,
   );
-});
-
-test('rate limits reject excessive requests', () => {
-  const limiter = new RateLimiter();
-  limiter.check('ip', 2);
-  limiter.check('ip', 2);
-  assert.throws(() => limiter.check('ip', 2), /Too many attempts/);
-  assert.doesNotThrow(() => limiter.check('other-ip', 2));
 });

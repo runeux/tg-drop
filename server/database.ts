@@ -1,3 +1,4 @@
+import { AuthLimiter } from './auth-limiter.js';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
@@ -24,6 +25,7 @@ const sessions = sqliteTable('sessions', {
 export type FileRecord = typeof files.$inferSelect;
 
 export class FileDatabase {
+  readonly authLimiter: AuthLimiter;
   private sqlite: Database.Database;
   private db;
 
@@ -53,6 +55,7 @@ export class FileDatabase {
     this.sqlite.exec(
       'CREATE TABLE IF NOT EXISTS sessions (digest TEXT PRIMARY KEY)',
     );
+    this.authLimiter = new AuthLimiter(this.sqlite);
     this.db = drizzle(this.sqlite);
     this.sqlite.transaction(() => {
       const existing = this.db

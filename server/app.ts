@@ -11,7 +11,6 @@ import { HttpError } from './errors.js';
 import { formatSize } from '../shared/files.js';
 import {
   normalizeCode,
-  RateLimiter,
   signToken,
   verifyPassword,
   verifyToken,
@@ -32,7 +31,6 @@ const uploadSchema = z.object({
 
 export function createApp(config: Config, files: Files, serveClient = true) {
   const app = new Hono<{ Bindings: HttpBindings }>();
-  const limiter = new RateLimiter();
   const sessionDigest = (token: string) =>
     createHmac('sha256', config.SESSION_SECRET)
       .update(config.PASSWORD_HASH)
@@ -105,13 +103,21 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   app.use('/api/lookup', bodyLimit({ maxSize: 4096 }));
   app.use('/api/resolve', bodyLimit({ maxSize: 4096 }));
 
+  for (const path of ['/api/resolve', '/api/session', '/api/lookup']) {
+    app.use(path, async (c, next) => {
+      if (c.req.method !== 'POST' || authenticated(c)) return next();
+      const address =
+        c.req.header('x-forwarded-for') ??
+        c.env?.incoming.socket.remoteAddress ??
+        'unknown';
+      await files.db.authLimiter.run(address, async () => {
+        await next();
+        return ![400, 401, 404].includes(c.res.status);
+      });
+    });
+  }
+
   app.post('/api/resolve', async (c) => {
-    const ip =
-      c.req.header('x-forwarded-for') ??
-      c.env?.incoming.socket.remoteAddress ??
-      'test';
-    limiter.check('resolve:global', 300);
-    limiter.check(`resolve:${ip}`, 20);
     const { value } = z
       .object({ value: z.string().min(1).max(256) })
       .parse(await c.req.json());
@@ -125,12 +131,6 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   });
 
   app.post('/api/session', async (c) => {
-    const ip =
-      c.req.header('x-forwarded-for') ??
-      c.env?.incoming.socket.remoteAddress ??
-      'test';
-    limiter.check('password:global', 120);
-    limiter.check(`password:${ip}`, 8);
     const { password } = z
       .object({ password: z.string().max(256) })
       .parse(await c.req.json());
@@ -155,12 +155,6 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   });
 
   app.post('/api/lookup', async (c) => {
-    const ip =
-      c.req.header('x-forwarded-for') ??
-      c.env?.incoming.socket.remoteAddress ??
-      'test';
-    limiter.check('lookup:global', 600);
-    limiter.check(`lookup:${ip}`, 30);
     const { code } = z
       .object({ code: z.string().max(64) })
       .parse(await c.req.json());
@@ -281,8 +275,10 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   }
 
   app.onError((error, c) => {
-    if (error instanceof HttpError)
+    if (error instanceof HttpError) {
+      if (error.retryAfter) c.header('Retry-After', String(error.retryAfter));
       return c.json({ error: error.message }, error.status);
+    }
     if (error instanceof ZodError || error instanceof SyntaxError)
       return c.json({ error: 'Invalid request.' }, 400);
     console.error('request failed', error.name);
