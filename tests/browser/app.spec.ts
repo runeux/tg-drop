@@ -81,14 +81,32 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
   }
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByLabel('Code or password').fill(code.toLowerCase());
+  await expect(page.locator('.screen-entry')).toHaveCSS('transform', 'none');
+  const submitBounds = await page
+    .getByRole('button', { name: 'Continue' })
+    .boundingBox();
+  const formBounds = await page.locator('.entry-form').boundingBox();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Continue' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(name);
   expect(await download.failure()).toBeNull();
+  const downloadButton = page.getByRole('link', { name: `Download ${name}` });
+  await expect(downloadButton).toBeFocused();
+  await expect(page.locator('.entry-form')).toHaveCSS('height', '66px');
+  await expect(downloadButton).toHaveCSS('transform', 'none');
+  expect(await downloadButton.boundingBox()).toEqual(submitBounds);
+  expect((await page.locator('.entry-form').boundingBox())?.y).toBe(
+    formBounds?.y,
+  );
+  await expect(page.getByRole('status')).toContainText(name);
+  await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
   const repeatPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await downloadButton.click();
   expect(await (await repeatPromise).failure()).toBeNull();
+  await page.getByRole('button', { name: 'another code' }).click();
+  await expect(page.getByLabel('Code or password')).toBeFocused();
+  await expect(page.getByLabel('Code or password')).toHaveValue('');
   await unlock(page);
   await row.getByRole('button', { name: /^Delete / }).click();
   await row.getByRole('button', { name: /^Confirm delete / }).click();

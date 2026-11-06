@@ -1,0 +1,104 @@
+import { expect, test } from '@playwright/test';
+import { filesResponseSchema } from '../../shared/files';
+
+test.beforeEach(async ({ context }, info) => {
+  await context.setExtraHTTPHeaders({
+    'X-Forwarded-For': `entry-${info.project.name}-${info.testId}`,
+  });
+});
+
+test.afterEach(async ({ page }) => {
+  const login = await page.request.post('/api/session', {
+    headers: { Origin: 'http://127.0.0.1:4173' },
+    data: { password: 'test-password' },
+  });
+  expect(login.ok()).toBe(true);
+  const response = await page.request.get('/api/files');
+  expect(response.ok()).toBe(true);
+  for (const file of filesResponseSchema.parse(await response.json()).files) {
+    const deletion = await page.request.delete(`/api/files/${file.id}`, {
+      headers: { Origin: 'http://127.0.0.1:4173' },
+    });
+    expect(deletion.ok()).toBe(true);
+  }
+});
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`code reveal, keyboard download and interrupted reset (${reducedMotion})`, async ({
+    page,
+  }) => {
+    const name =
+      'field-notes-with-a-very-long-filename-for-the-smallest-screen.pdf';
+    await page.emulateMedia({ reducedMotion });
+    await page.goto('/');
+    await page.getByLabel('Code or password').fill('test-password');
+    await page.getByLabel('Code or password').press('Enter');
+    await page.getByLabel('Choose files').setInputFiles({
+      name,
+      mimeType: 'application/pdf',
+      buffer: Buffer.alloc(2_400_000, 'x'),
+    });
+    const row = page.getByRole('listitem').filter({ hasText: name });
+    await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
+    const code = await row.locator('.code-value').innerText();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    const input = page.getByLabel('Code or password');
+    await input.fill(code);
+    await expect(page.locator('.screen-entry')).toHaveCSS('transform', 'none');
+    const automatic = page.waitForEvent('download');
+    await input.press('Enter');
+    expect(await (await automatic).failure()).toBeNull();
+    const button = page.getByRole('link', { name: `Download ${name}` });
+    await expect(button).toBeFocused();
+    const repeated = page.waitForEvent('download');
+    await page.keyboard.press('Enter');
+    expect(await (await repeated).failure()).toBeNull();
+    await expect(page.locator('.download-name')).toHaveAttribute('title', name);
+    await expect(page.locator('.download-meta')).toContainText('pdf document');
+    await expect(page.locator('.download-meta')).toContainText('2.4\u00a0MB');
+    await expect(page.locator('.entry-form')).toHaveCSS('height', '66px');
+    const form = await page.locator('.entry-form').boundingBox();
+    const reset = await page
+      .getByRole('button', { name: 'another code' })
+      .boundingBox();
+    expect(form).not.toBeNull();
+    expect(reset).not.toBeNull();
+    if (!form || !reset) throw new Error('missing entry controls');
+    expect(reset.y).toBeGreaterThan(form.y + form.height);
+    expect(reset.height).toBeGreaterThanOrEqual(44);
+    if (reducedMotion === 'reduce') {
+      await expect(page.locator('.entry-input-row')).toHaveCSS(
+        'transform',
+        'none',
+      );
+      await expect(button).toHaveCSS('filter', 'blur(0px)');
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('button', { name: 'another code' }),
+    ).toBeFocused();
+    // reverse while the reveal can still be moving, then immediately submit again.
+    await page.keyboard.press('Escape');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue('');
+    await input.fill(code);
+    const next = page.waitForEvent('download');
+    await input.press('Enter');
+    expect(await (await next).failure()).toBeNull();
+    await expect(button).toBeFocused();
+    // escape also works after focus leaves the result controls.
+    await button.evaluate((element) => element.blur());
+    await expect(button).not.toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(input).toBeFocused();
+    await expect(page.locator('.entry-form')).toHaveCSS('height', '66px');
+    await expect(
+      page.getByRole('link', { name: `Download ${name}` }),
+    ).toHaveCount(0);
+  });
+}

@@ -1,34 +1,56 @@
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion, useIsPresent } from 'motion/react';
-import { ArrowDownToLine, ArrowRight, LoaderCircle } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AnimatePresence,
+  motion,
+  useIsPresent,
+  useReducedMotion,
+} from 'motion/react';
+import { ArrowLeft, ArrowRight, LoaderCircle } from 'lucide-react';
 import { api, message } from './api';
 import { resolveSchema, formatSize } from '../shared/files';
+import { EntryDownload, type Download } from './EntryDownload';
+
+const ease = [0.22, 1, 0.36, 1] as const;
 
 export function EntryForm({ onPassword }: { onPassword?: () => void }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [download, setDownload] = useState<{
-    name: string;
-    size: number;
-    url: string;
-  } | null>(null);
+  const [download, setDownload] = useState<Download | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const request = useRef<AbortController | null>(null);
   const isPresent = useIsPresent();
+  const reducedMotion = useReducedMotion();
+  const duration = reducedMotion ? 0.12 : 0.42;
+  const blur = reducedMotion ? 'blur(0px)' : 'blur(5px)';
+
+  useEffect(() => () => request.current?.abort(), []);
 
   useEffect(() => {
-    inputRef.current?.focus({ preventScroll: true });
-    return () => request.current?.abort();
-  }, []);
+    if (!download) inputRef.current?.focus({ preventScroll: true });
+  }, [download]);
 
   useEffect(() => {
     if (!isPresent) request.current?.abort();
   }, [isPresent]);
 
+  const reset = useCallback(() => {
+    setDownload(null);
+    setValue('');
+  }, []);
+
+  useEffect(() => {
+    if (!download || !isPresent) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') reset();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [download, isPresent, reset]);
+
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!value.trim() || busy) return;
+    if (!value.trim() || busy || download) return;
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -48,7 +70,6 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
     } catch (error) {
       if (controller.signal.aborted) return;
       setError(message(error));
-      setDownload(null);
       inputRef.current?.focus({ preventScroll: true });
     } finally {
       if (request.current === controller) {
@@ -66,78 +87,97 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
           void submit(event);
         }}
       >
-        <input
-          ref={inputRef}
-          aria-label="Code or password"
-          aria-describedby={error ? 'entry-error' : undefined}
-          aria-invalid={Boolean(error)}
-          type="password"
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="code or password"
-          value={value}
-          maxLength={256}
-          onChange={(event) => {
-            request.current?.abort();
-            request.current = null;
-            setBusy(false);
-            setValue(event.target.value);
-            setError('');
-            setDownload(null);
+        <motion.div
+          className="entry-input-row"
+          inert={Boolean(download)}
+          aria-hidden={Boolean(download)}
+          initial={false}
+          animate={{
+            opacity: download ? 0 : 1,
+            x: download && !reducedMotion ? '-105%' : 0,
+            filter: download ? blur : 'blur(0px)',
           }}
-        />
-        <motion.button
-          className="submit-button"
-          type="submit"
-          aria-label="Continue"
-          disabled={busy || !value.trim()}
-          whileTap={busy || !value.trim() ? undefined : { scale: 0.95 }}
+          transition={{ type: 'tween', duration, ease }}
         >
-          {busy ? (
-            <LoaderCircle size={19} className="spinning" />
-          ) : (
-            <ArrowRight size={21} />
-          )}
-        </motion.button>
+          <input
+            ref={inputRef}
+            aria-label="Code or password"
+            aria-describedby={error ? 'entry-error' : undefined}
+            aria-invalid={Boolean(error)}
+            type="password"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="code or password"
+            value={value}
+            maxLength={256}
+            onChange={(event) => {
+              request.current?.abort();
+              request.current = null;
+              setBusy(false);
+              setValue(event.target.value);
+              setError('');
+            }}
+          />
+          <motion.button
+            className="submit-button"
+            type="submit"
+            aria-label="Continue"
+            disabled={busy || !value.trim()}
+            whileTap={busy || !value.trim() ? undefined : { scale: 0.95 }}
+          >
+            {busy ? (
+              <LoaderCircle size={19} className="spinning" />
+            ) : (
+              <ArrowRight size={21} />
+            )}
+          </motion.button>
+        </motion.div>
+        <AnimatePresence>
+          {download && <EntryDownload key="download" file={download} />}
+        </AnimatePresence>
       </form>
+      <motion.button
+        className="entry-reset"
+        type="button"
+        tabIndex={0}
+        inert={!download}
+        aria-hidden={!download}
+        disabled={!download}
+        initial={false}
+        animate={{
+          opacity: download ? 1 : 0,
+          y: download || reducedMotion ? 0 : 6,
+        }}
+        transition={{
+          type: 'tween',
+          duration: reducedMotion ? 0.12 : 0.3,
+          ease,
+          delay: download && !reducedMotion ? 0.25 : 0,
+        }}
+        onClick={reset}
+      >
+        <ArrowLeft size={13} aria-hidden="true" />
+        another code
+      </motion.button>
+      <span className="visually-hidden" role="status">
+        {download
+          ? `${download.name}, ${formatSize(download.size)}. Ready to download.`
+          : ''}
+      </span>
       <AnimatePresence initial={false}>
         {error && (
           <motion.p
             className="entry-error"
             id="entry-error"
             role="alert"
-            initial={{ opacity: 0, y: 4 }}
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 4 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
+            exit={{ opacity: 0, y: reducedMotion ? 0 : 4 }}
           >
             {error}
           </motion.p>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {download && (
-          <motion.div
-            className="download-file"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 6 }}
-          >
-            <div className="download-info">
-              <span title={download.name}>{download.name}</span>
-              <small>{formatSize(download.size)}</small>
-            </div>
-            <motion.a
-              className="download-button icon-button"
-              href={download.url}
-              download
-              whileTap={{ scale: 0.94 }}
-              aria-label={`Download ${download.name}`}
-            >
-              <ArrowDownToLine size={21} />
-            </motion.a>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>
