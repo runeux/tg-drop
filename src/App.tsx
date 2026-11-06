@@ -8,18 +8,20 @@ import {
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
-import { api, sessionSchema } from './api';
+import { api, message, okSchema, sessionSchema } from './api';
 import { EntryForm } from './EntryForm';
 import { captureDrop, prepareDrop } from './selection';
 
 const Uploads = lazy(() => import('./Uploads'));
 
-type Screen = 'entry' | 'upload';
+type Screen = 'loading' | 'entry' | 'upload';
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>('entry');
+  const [screen, setScreen] = useState<Screen>('loading');
   const [authenticated, setAuthenticated] = useState(false);
   const [maxFileBytes, setMaxFileBytes] = useState(4_000_000_000);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectionError, setSelectionError] = useState('');
@@ -30,14 +32,18 @@ export function App() {
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    void api('/session', sessionSchema)
+    const controller = new AbortController();
+    void api('/session', sessionSchema, { signal: controller.signal })
       .then((session) => {
+        if (controller.signal.aborted) return;
         setAuthenticated(session.authenticated);
+        setScreen(session.authenticated ? 'upload' : 'entry');
         setMaxFileBytes(session.maxFileBytes);
       })
       .catch(() => {
-        /* the form reports a connection error when used. */
+        if (!controller.signal.aborted) setScreen('entry');
       });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -113,9 +119,19 @@ export function App() {
     };
   }, [acceptFiles, maxFileBytes]);
 
-  const back = () => {
-    setScreen('entry');
-    setPendingFiles([]);
+  const back = async () => {
+    setLoggingOut(true);
+    setAuthError('');
+    try {
+      await api('/session', okSchema, { method: 'DELETE' });
+      setAuthenticated(false);
+      setScreen('entry');
+      setPendingFiles([]);
+    } catch (error) {
+      setAuthError(message(error));
+    } finally {
+      setLoggingOut(false);
+    }
   };
   const receivedPending = useCallback(() => setPendingFiles([]), []);
   const unauthorized = useCallback(() => {
@@ -131,7 +147,8 @@ export function App() {
             <motion.button
               className="back icon-button"
               aria-label="Back"
-              onClick={back}
+              onClick={() => void back()}
+              disabled={loggingOut}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -143,7 +160,7 @@ export function App() {
         </AnimatePresence>
         <div className="centered-stage" inert={screen === 'upload'}>
           <AnimatePresence initial={false}>
-            {screen !== 'upload' && (
+            {screen === 'entry' && (
               <motion.div
                 className="screen screen-entry"
                 key={screen}
@@ -211,18 +228,23 @@ export function App() {
           </motion.div>
         )}
       </main>
-      {(preparing || selectionError) && (
+      {(preparing || selectionError || authError) && (
         <div
           className="selection-notice"
-          role={selectionError ? 'alert' : 'status'}
+          role={selectionError || authError ? 'alert' : 'status'}
         >
           {preparing && <LoaderCircle size={16} className="spinning" />}
-          <span>{preparing ? `preparing ${preparing}` : selectionError}</span>
+          <span>
+            {preparing ? `preparing ${preparing}` : selectionError || authError}
+          </span>
           {!preparing && (
             <button
               className="icon-button"
               aria-label="Dismiss selection error"
-              onClick={() => setSelectionError('')}
+              onClick={() => {
+                setSelectionError('');
+                setAuthError('');
+              }}
             >
               <X size={16} />
             </button>

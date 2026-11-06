@@ -431,3 +431,48 @@ test('one entry field resolves the password before file codes, and owner downloa
     await context.close();
   }
 });
+
+test('persistent sessions renew, reject forged cookies, and cannot be replayed after logout', async () => {
+  const context = await setup();
+  try {
+    const login = await context.login();
+    const header = login.headers.get('set-cookie') ?? '';
+    assert.match(header, /Max-Age=34560000/);
+    const cookie = header.split(';')[0];
+    assert.ok(cookie);
+    const session = await context.request('/session');
+    assert.equal((await session.json()).authenticated, true);
+    assert.match(session.headers.get('set-cookie') ?? '', /Max-Age=34560000/);
+    for (const headers of [
+      { Cookie: '' },
+      { Cookie: 'drop_session=' + 'a'.repeat(64) },
+    ]) {
+      for (const [path, method] of [
+        ['/files', 'GET'],
+        ['/files/', 'GET'],
+        ['/files', 'POST'],
+        ['/files/private/download', 'GET'],
+        ['/files/private', 'DELETE'],
+        ['/files/private/retry', 'POST'],
+      ] as const) {
+        const response = await context.request(path, { method, headers });
+        assert.equal(response.status, 401, `${method} ${path}`);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+      }
+    }
+    const logout = await context.request('/session', { method: 'DELETE' });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get('set-cookie') ?? '', /Max-Age=0/);
+    assert.equal((await context.request('/session')).status, 200);
+    assert.equal(
+      (await (await context.request('/session')).json()).authenticated,
+      false,
+    );
+    assert.equal(
+      (await context.request('/files', { headers: { Cookie: cookie } })).status,
+      401,
+    );
+  } finally {
+    await context.close();
+  }
+});

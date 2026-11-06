@@ -17,6 +17,10 @@ const files = sqliteTable('files', {
   storageKey: text(),
 });
 
+const sessions = sqliteTable('sessions', {
+  digest: text().primaryKey(),
+});
+
 export type FileRecord = typeof files.$inferSelect;
 
 export class FileDatabase {
@@ -46,6 +50,9 @@ export class FileDatabase {
     this.sqlite.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS files_storage_key ON files(storageKey) WHERE storageKey IS NOT NULL',
     );
+    this.sqlite.exec(
+      'CREATE TABLE IF NOT EXISTS sessions (digest TEXT PRIMARY KEY)',
+    );
     this.db = drizzle(this.sqlite);
     this.sqlite.transaction(() => {
       const existing = this.db
@@ -74,6 +81,17 @@ export class FileDatabase {
       .run();
   }
 
+  createSession(digest: string) {
+    this.db.insert(sessions).values({ digest }).run();
+  }
+  hasSession(digest: string) {
+    return Boolean(
+      this.db.select().from(sessions).where(eq(sessions.digest, digest)).get(),
+    );
+  }
+  deleteSession(digest: string) {
+    this.db.delete(sessions).where(eq(sessions.digest, digest)).run();
+  }
   insert(file: FileRecord) {
     this.db.insert(files).values(file).run();
   }

@@ -53,3 +53,20 @@ test('migration preserves files, replaces legacy codes and keeps new codes stabl
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('sessions persist across database restarts until explicitly revoked', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tg-drop-sessions-'));
+  const initial = new FileDatabase(directory);
+  initial.createSession('session-digest');
+  initial.close();
+  const reopened = new FileDatabase(directory);
+  try {
+    assert.equal(reopened.hasSession('session-digest'), true);
+    assert.equal(reopened.hasSession('unknown'), false);
+    reopened.deleteSession('session-digest');
+    assert.equal(reopened.hasSession('session-digest'), false);
+  } finally {
+    reopened.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

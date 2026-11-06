@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import type { HttpBindings } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -19,7 +20,8 @@ import type { Config } from './config.js';
 import type { Files } from './files.js';
 
 const SESSION_COOKIE = 'drop_session';
-const SESSION_TTL = 7 * 86_400_000;
+// browsers cap persistent cookies at 400 days; active sessions renew this window.
+const SESSION_MAX_AGE = 400 * 86_400;
 type AppContext = Context<{ Bindings: HttpBindings }>;
 const uploadSchema = z.object({
   id: z.uuid(),
@@ -31,19 +33,33 @@ const uploadSchema = z.object({
 export function createApp(config: Config, files: Files, serveClient = true) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const limiter = new RateLimiter();
-  const unlock = (c: AppContext) =>
-    setCookie(
-      c,
-      SESSION_COOKIE,
-      signToken(config.SESSION_SECRET, 'session', 'owner', SESSION_TTL),
-      {
-        httpOnly: true,
-        secure: config.ORIGIN.startsWith('https:'),
-        sameSite: 'Strict',
-        path: '/api',
-        maxAge: SESSION_TTL / 1000,
-      },
+  const sessionDigest = (token: string) =>
+    createHmac('sha256', config.SESSION_SECRET)
+      .update(config.PASSWORD_HASH)
+      .update('\0')
+      .update(token)
+      .digest('hex');
+  const sessionToken = (c: AppContext) => getCookie(c, SESSION_COOKIE) ?? '';
+  const authenticated = (c: AppContext) => {
+    const token = sessionToken(c);
+    return (
+      /^[a-f0-9]{64}$/.test(token) && files.db.hasSession(sessionDigest(token))
     );
+  };
+  const persistSession = (c: AppContext, token: string) =>
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: config.ORIGIN.startsWith('https:'),
+      sameSite: 'Strict',
+      path: '/api',
+      maxAge: SESSION_MAX_AGE,
+    });
+  const unlock = (c: AppContext) => {
+    files.db.deleteSession(sessionDigest(sessionToken(c)));
+    const token = randomBytes(32).toString('hex');
+    files.db.createSession(sessionDigest(token));
+    persistSession(c, token);
+  };
   const downloadDetails = (file: {
     id: string;
     name: string;
@@ -124,19 +140,16 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     return c.json({ ok: true });
   });
 
-  app.get('/api/session', (c) =>
-    c.json({
-      authenticated: Boolean(
-        verifyToken(
-          config.SESSION_SECRET,
-          getCookie(c, SESSION_COOKIE) ?? '',
-          'session',
-        ),
-      ),
+  app.get('/api/session', (c) => {
+    const authorized = authenticated(c);
+    if (authorized) persistSession(c, sessionToken(c));
+    return c.json({
+      authenticated: authorized,
       maxFileBytes: config.MAX_FILE_BYTES,
-    }),
-  );
+    });
+  });
   app.delete('/api/session', (c) => {
+    files.db.deleteSession(sessionDigest(sessionToken(c)));
     deleteCookie(c, SESSION_COOKIE, { path: '/api' });
     return c.json({ ok: true });
   });
@@ -211,14 +224,7 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   });
 
   app.use('/api/files/*', async (c, next) => {
-    if (
-      !verifyToken(
-        config.SESSION_SECRET,
-        getCookie(c, SESSION_COOKIE) ?? '',
-        'session',
-      )
-    )
-      throw new HttpError(401, 'Sign in again.');
+    if (!authenticated(c)) throw new HttpError(401, 'Sign in again.');
     await next();
   });
   app.get('/api/files', (c) => c.json({ files: files.list() }));
