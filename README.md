@@ -20,7 +20,7 @@ the dashboard separates files from a masonry gallery of images, gifs, and videos
 
 ### run
 
-node.js 24 lts. get telegram api credentials from [my.telegram.org](https://my.telegram.org/apps).
+node.js 24 lts and ffmpeg (including ffprobe) are required. get telegram api credentials from [my.telegram.org](https://my.telegram.org/apps).
 
 ```sh
 npm ci

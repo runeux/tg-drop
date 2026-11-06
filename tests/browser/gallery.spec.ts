@@ -52,10 +52,7 @@ async function seed(page: Page) {
     {
       name: 'animation.gif',
       mime: 'image/gif',
-      bytes: Buffer.from(
-        'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-        'base64',
-      ),
+      bytes: await readFile('tests/fixtures/gallery.gif'),
     },
     {
       name: 'video.mp4',
@@ -107,6 +104,14 @@ test('gallery partitions media, preserves proportions and opens a responsive ful
   try {
     if (info.project.name === 'desktop')
       await page.setViewportSize({ width: 1440, height: 1000 });
+    let release = () => {};
+    const previewsReady = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/files/*/preview', async (route) => {
+      await previewsReady;
+      await route.continue();
+    });
     await page.goto('/');
     await expect(page.getByRole('tab', { name: 'files' })).toHaveAttribute(
       'aria-selected',
@@ -124,6 +129,22 @@ test('gallery partitions media, preserves proportions and opens a responsive ful
     ).toHaveCount(0);
     await expect(page.locator('.gallery-card')).toHaveCount(6);
     const wide = page.getByRole('article', { name: 'wide.svg', exact: true });
+    const before = await page.locator('.gallery-card').evaluateAll((cards) =>
+      cards.map((card) => {
+        const { x, y, width, height } = card.getBoundingClientRect();
+        return { name: card.getAttribute('aria-label'), x, y, width, height };
+      }),
+    );
+    for (const [name, ratio] of [
+      ['wide.svg', 16 / 9],
+      ['video.mp4', 16 / 9],
+      ['animation.gif', 2],
+    ] as const) {
+      const card = before.find((item) => item.name === name);
+      expect(card).toBeDefined();
+      if (card) expect(card.width / card.height).toBeCloseTo(ratio, 1);
+    }
+    release();
     const portrait = page.getByRole('article', {
       name: 'portrait.svg',
       exact: true,
@@ -142,6 +163,13 @@ test('gallery partitions media, preserves proportions and opens a responsive ful
           .evaluate((image: HTMLImageElement) => image.naturalWidth),
       )
       .toBe(900);
+    const after = await page.locator('.gallery-card').evaluateAll((cards) =>
+      cards.map((card) => {
+        const { x, y, width, height } = card.getBoundingClientRect();
+        return { name: card.getAttribute('aria-label'), x, y, width, height };
+      }),
+    );
+    expect(after).toEqual(before);
     const bounds = await wide.boundingBox();
     const tall = await portrait.boundingBox();
     expect(bounds).not.toBeNull();

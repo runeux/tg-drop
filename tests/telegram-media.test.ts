@@ -101,6 +101,12 @@ test('history and live sync accept album photos and videos with correct metadata
   ];
   const events = new Emitter<Message>();
   const port = telegramSyncPort({
+    async getMessages() {
+      throw new Error('unexpected lookup');
+    },
+    downloadAsNodeStream() {
+      throw new Error('unexpected download');
+    },
     async *iterHistory(chat) {
       assert.equal(chat, TELEGRAM_CHAT_ID);
       yield* messages;
@@ -112,6 +118,10 @@ test('history and live sync accept album photos and videos with correct metadata
   });
   const history = [];
   for await (const file of port.history()) history.push(file);
+  assert.deepEqual(
+    history.slice(0, 5).map(({ width, height }) => [width, height]),
+    Array.from({ length: 5 }, () => [1280, 720]),
+  );
   assert.deepEqual(
     history.map(({ name, mime, size }) => ({ name, mime, size })),
     [

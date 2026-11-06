@@ -39,9 +39,12 @@ test('migration preserves files, replaces legacy codes and keeps new codes stabl
     assert.ok(file);
     assert.equal(file.code.replaceAll('-', '').length, 16);
     assert.equal(migrated.byCode('ABCD-EFGH-JKLM'), undefined);
+    migrated.update(file.id, { width: 1920, height: 1080 });
     const reopened = new FileDatabase(directory);
     try {
       assert.equal(reopened.get(file.id)?.code, file.code);
+      assert.equal(reopened.get(file.id)?.width, 1920);
+      assert.equal(reopened.get(file.id)?.height, 1080);
     } finally {
       reopened.close();
     }

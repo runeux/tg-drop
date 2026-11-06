@@ -41,7 +41,9 @@ export default function Gallery({
         key: file.id,
         src: `/api/files/${file.id}/preview`,
         file,
-        ...(dimensions[file.id] ?? { width: 1, height: 1 }),
+        ...(file.width && file.height
+          ? { width: file.width, height: file.height }
+          : (dimensions[file.id] ?? { width: 1, height: 1 })),
       })),
     [files, dimensions],
   );
@@ -61,7 +63,11 @@ export default function Gallery({
               key={photo.key}
               file={photo.file}
               open={() => setSelected(photo.file.id)}
-              measure={measure}
+              measure={
+                photo.file.width && photo.file.height ? undefined : measure
+              }
+              width={photo.width}
+              height={photo.height}
             />
           ),
         }}
@@ -84,12 +90,17 @@ function GalleryCard({
   file,
   open,
   measure,
+  width,
+  height,
 }: {
   file: DropFile;
   open: () => void;
-  measure: (id: string, width: number, height: number) => void;
+  width: number;
+  height: number;
+  measure?: (id: string, width: number, height: number) => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [visible, setVisible] = useState(false);
   const element = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -112,6 +123,8 @@ function GalleryCard({
       <button
         id={`gallery-open-${file.id}`}
         className="gallery-open"
+        style={{ aspectRatio: `${width} / ${height}` }}
+        data-loaded={loaded}
         aria-label={`Open ${file.name}`}
         onClick={(event) => {
           event.currentTarget.focus({ preventScroll: true });
@@ -132,8 +145,9 @@ function GalleryCard({
             preload="metadata"
             muted
             playsInline
+            onLoadedData={() => setLoaded(true)}
             onLoadedMetadata={(event) =>
-              measure(
+              measure?.(
                 file.id,
                 event.currentTarget.videoWidth,
                 event.currentTarget.videoHeight,
@@ -147,13 +161,14 @@ function GalleryCard({
             alt={file.name}
             loading="lazy"
             decoding="async"
-            onLoad={(event) =>
-              measure(
+            onLoad={(event) => {
+              setLoaded(true);
+              measure?.(
                 file.id,
                 event.currentTarget.naturalWidth,
                 event.currentTarget.naturalHeight,
-              )
-            }
+              );
+            }}
             onError={() => setFailed(true)}
           />
         )}

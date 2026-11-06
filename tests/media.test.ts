@@ -2,6 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mediaKind, mediaType } from '../shared/media.js';
 import { byteRange } from '../server/byte-range.js';
+import { probeDimensions } from '../server/media-dimensions.js';
+
+test('video and animated image dimensions are read before previews load', async () => {
+  assert.deepEqual(
+    await probeDimensions('tests/fixtures/gallery.mp4', {
+      name: 'clip.mp4',
+      mime: 'video/mp4',
+    }),
+    { width: 320, height: 180 },
+  );
+  assert.deepEqual(
+    await probeDimensions('tests/fixtures/gallery.gif', {
+      name: 'animation.gif',
+      mime: 'image/gif',
+    }),
+    { width: 200, height: 100 },
+  );
+});
 
 test('gallery classification includes media documents and leaves other files out', () => {
   for (const [name, mime, kind, type] of [

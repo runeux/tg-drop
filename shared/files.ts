@@ -5,6 +5,8 @@ export const fileSchema = z.object({
   name: z.string(),
   size: z.number(),
   mime: z.string(),
+  width: z.number().positive().nullable().optional(),
+  height: z.number().positive().nullable().optional(),
   code: z.string(),
   createdAt: z.number(),
   status: z.enum(['queued', 'storing', 'ready', 'failed']),

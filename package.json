@@ -28,6 +28,7 @@
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.16",
+    "image-size": "^2.1.0",
     "ipaddr.js": "^2.5.0",
     "lucide-react": "^1.69.0",
     "motion": "^14.9.1",

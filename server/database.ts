@@ -16,13 +16,18 @@ const files = sqliteTable('files', {
   createdAt: integer().notNull(),
   status: text().$type<DropFile['status'] | 'deleting'>().notNull(),
   storageKey: text(),
+  width: integer(),
+  height: integer(),
 });
 
 const sessions = sqliteTable('sessions', {
   digest: text().primaryKey(),
 });
 
-export type FileRecord = typeof files.$inferSelect;
+export type FileRecord = Omit<typeof files.$inferSelect, 'width' | 'height'> & {
+  width?: number | null;
+  height?: number | null;
+};
 
 export class FileDatabase {
   readonly authLimiter: AuthLimiter;
@@ -39,6 +44,14 @@ export class FileDatabase {
       createdAt INTEGER NOT NULL, status TEXT NOT NULL,
       storageKey TEXT
     );`);
+    for (const column of ['width', 'height']) {
+      if (
+        !this.sqlite
+          .prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?')
+          .get('files', column)
+      )
+        this.sqlite.exec(`ALTER TABLE files ADD COLUMN ${column} INTEGER`);
+    }
     const legacy = this.sqlite
       .prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?')
       .get('files', 'expiration');
@@ -124,7 +137,9 @@ export class FileDatabase {
   }
   update(
     id: string,
-    values: Partial<Pick<FileRecord, 'status' | 'storageKey'>>,
+    values: Partial<
+      Pick<FileRecord, 'status' | 'storageKey' | 'width' | 'height'>
+    >,
   ) {
     this.db.update(files).set(values).where(eq(files.id, id)).run();
   }

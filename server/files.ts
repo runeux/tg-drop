@@ -11,6 +11,8 @@ import type { ByteRange, FileStorage } from './storage/types.js';
 import type { DropFile } from '../shared/files.js';
 import { generateCode } from './security.js';
 import { HttpError } from './errors.js';
+import { imageDimensions, probeDimensions } from './media-dimensions.js';
+import { mediaKind } from '../shared/media.js';
 
 export class Files {
   readonly db: FileDatabase;
@@ -35,6 +37,30 @@ export class Files {
   }
 
   async start() {
+    for (const file of this.db.list()) {
+      if (
+        file.status !== 'ready' ||
+        !file.storageKey ||
+        file.width ||
+        mediaKind(file) !== 'image'
+      )
+        continue;
+      try {
+        const stream = await this.storage.open(file.storageKey, {
+          start: 0,
+          end: Math.min(file.size - 1, 262143),
+        });
+        const dimensions = imageDimensions(
+          Buffer.concat(await stream.toArray()),
+        );
+        this.db.update(file.id, dimensions);
+      } catch (error) {
+        console.warn(
+          'image metadata backfill failed',
+          error instanceof Error ? error.name : 'unknown',
+        );
+      }
+    }
     await mkdir(join(this.config.DATA_DIR, 'staging'), {
       recursive: true,
       mode: 0o700,
@@ -60,6 +86,8 @@ export class Files {
           name: file.name,
           size: file.size,
           mime: file.mime,
+          width: file.width,
+          height: file.height,
           code: file.status === 'ready' ? file.code : '',
           createdAt: file.createdAt,
           status: file.status,
@@ -125,8 +153,10 @@ export class Files {
       if (received !== meta.size)
         throw new HttpError(400, 'Upload was interrupted. Try again.');
       await rename(this.path(`${meta.id}.part`), this.path(meta.id));
+      const dimensions = await probeDimensions(this.path(meta.id), meta);
       this.db.insert({
         ...meta,
+        ...dimensions,
         createdAt: Date.now(),
         code: generateCode(),
         status: 'queued',
