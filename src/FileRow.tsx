@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Check, Copy, LoaderCircle, RotateCcw, Trash2, X } from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
 
-type SavedFileProps = {
+export type SavedFileProps = {
   file: DropFile;
   detail?: string;
   local?: boolean;

@@ -1,10 +1,11 @@
-import { RawDocument, TelegramClient } from '@mtcute/node';
+import { Photo, RawDocument, TelegramClient } from '@mtcute/node';
 import { captionWithCode } from '../telegram-sync.js';
 import { TELEGRAM_CHAT_ID } from '../telegram-chat.js';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import type { Config } from '../config.js';
 import type { FileRecord } from '../database.js';
-import type { FileStorage } from './types.js';
+import type { ByteRange, FileStorage } from './types.js';
 
 export function telegramClient(
   config: Pick<Config, 'TG_API_ID' | 'TG_API_HASH' | 'DATA_DIR'>,
@@ -24,7 +25,18 @@ export function telegramClient(
 }
 
 export class TelegramStorage implements FileStorage {
-  constructor(private client: TelegramClient) {}
+  constructor(
+    private client: Pick<
+      TelegramClient,
+      | 'searchMessages'
+      | 'editMessage'
+      | 'sendMedia'
+      | 'getMessages'
+      | 'downloadAsNodeStream'
+      | 'deleteMessages'
+      | 'destroy'
+    >,
+  ) {}
 
   async put(
     path: string,
@@ -71,15 +83,44 @@ export class TelegramStorage implements FileStorage {
     return String(message.id);
   }
 
-  async open(key: string) {
+  async open(key: string, range?: ByteRange) {
     // resolve the message each time so telegram file references stay fresh.
     const [message] = await this.client.getMessages(
       TELEGRAM_CHAT_ID,
       Number(key),
     );
-    if (!message?.media || !(message.media instanceof RawDocument))
+    if (!(
+      message?.media instanceof RawDocument || message?.media instanceof Photo
+    ))
       throw new Error('stored file is unavailable');
-    return this.client.downloadAsNodeStream(message.media);
+    if (!range) return this.client.downloadAsNodeStream(message.media);
+    // telegram offsets must align to 4 kib; trim the leading bytes locally.
+    const offset = Math.floor(range.start / 4096) * 4096;
+    const source = this.client.downloadAsNodeStream(message.media, { offset });
+    const output = Readable.from(
+      (async function* () {
+        let skip = range.start - offset;
+        let remaining = range.end - range.start + 1;
+        try {
+          for await (const chunk of source) {
+            if (!(chunk instanceof Uint8Array))
+              throw new Error('invalid file chunk');
+            const ignored = Math.min(skip, chunk.length);
+            skip -= ignored;
+            const data = chunk.subarray(ignored, ignored + remaining);
+            if (data.length) {
+              remaining -= data.length;
+              yield data;
+            }
+            if (!remaining) break;
+          }
+        } finally {
+          source.destroy();
+        }
+      })(),
+    );
+    output.once('close', () => source.destroy());
+    return output;
   }
 
   async remove(key: string) {

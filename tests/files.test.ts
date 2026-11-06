@@ -69,7 +69,11 @@ async function setup(
     assert.ok(cookie);
     return response;
   }
-  async function upload(name = 'sample.txt', contents = 'hello from drop') {
+  async function upload(
+    name = 'sample.txt',
+    contents = 'hello from drop',
+    mime = 'text/plain',
+  ) {
     const id = randomUUID();
     const response = await request('/files', {
       method: 'POST',
@@ -77,7 +81,7 @@ async function setup(
         'x-upload-id': id,
         'x-file-name': encodeURIComponent(name),
         'x-file-size': String(Buffer.byteLength(contents)),
-        'Content-Type': 'text/plain',
+        'Content-Type': mime,
       },
       body: contents,
     });
@@ -545,6 +549,68 @@ test('switching credential endpoints cannot bypass the personal cooldown', async
     assert.equal(response.status, 429);
     assert.equal(response.headers.get('retry-after'), '60');
     assert.equal(response.headers.get('set-cookie'), null);
+  } finally {
+    await context.close();
+  }
+});
+
+test('media previews require a session and support inline streaming, head and byte ranges', async () => {
+  const context = await setup();
+  try {
+    assert.equal((await context.request('/files/missing/preview')).status, 401);
+    await context.login();
+    const contents = 'abcdefghijklmnopqrstuvwxyz';
+    const video = await context.upload('clip.mp4', contents, 'video/mp4');
+    const path = `/files/${video.id}/preview`;
+    const full = await context.request(path);
+    assert.equal(full.status, 200);
+    assert.equal(full.headers.get('content-type'), 'video/mp4');
+    assert.equal(full.headers.get('accept-ranges'), 'bytes');
+    assert.match(full.headers.get('content-disposition') ?? '', /^inline;/);
+    assert.equal(await full.text(), contents);
+    for (const [range, start, end] of [
+      ['bytes=2-5', 2, 5],
+      ['bytes=10-', 10, 25],
+      ['bytes=-4', 22, 25],
+    ] as const) {
+      const response = await context.request(path, {
+        headers: { Range: range },
+      });
+      assert.equal(response.status, 206);
+      assert.equal(
+        response.headers.get('content-range'),
+        `bytes ${start}-${end}/26`,
+      );
+      assert.equal(
+        response.headers.get('content-length'),
+        String(end - start + 1),
+      );
+      assert.equal(await response.text(), contents.slice(start, end + 1));
+    }
+    const head = await context.request(path, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get('content-length'), '26');
+    assert.equal(await head.text(), '');
+    const invalid = await context.request(path, {
+      headers: { Range: 'bytes=99-' },
+    });
+    assert.equal(invalid.status, 416);
+    assert.equal(invalid.headers.get('content-range'), 'bytes */26');
+    await invalid.text();
+    const text = await context.upload();
+    assert.equal(
+      (await context.request(`/files/${text.id}/preview`)).status,
+      415,
+    );
+    const svg = await context.upload('image.svg', '<svg/>', 'image/svg+xml');
+    const svgPreview = await context.request(`/files/${svg.id}/preview`);
+    assert.match(
+      svgPreview.headers.get('content-security-policy') ?? '',
+      /sandbox/,
+    );
+    assert.equal(await svgPreview.text(), '<svg/>');
+    await context.request('/session', { method: 'DELETE' });
+    assert.equal((await context.request(path)).status, 401);
   } finally {
     await context.close();
   }

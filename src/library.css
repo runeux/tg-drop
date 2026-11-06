@@ -1,0 +1,71 @@
+.dashboard-tabs {
+  display: flex;
+  width: fit-content;
+  margin: 28px auto 24px;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid var(--separator);
+  background: #121212;
+  border-radius: 15px;
+}
+.dashboard-tabs button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 126px;
+  min-height: 42px;
+  padding: 0 18px;
+  background: transparent;
+  border-radius: 11px;
+  color: var(--label-secondary);
+  font-size: 13px;
+}
+.dashboard-tabs button[aria-selected='true'] {
+  color: var(--label-primary);
+}
+.dashboard-tabs button > span:not(.tab-indicator),
+.dashboard-tabs small {
+  position: relative;
+}
+.dashboard-tabs small {
+  font-size: 11px;
+  color: var(--label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.tab-indicator {
+  position: absolute;
+  inset: 0;
+  background: #292929;
+  border: 1px solid #ffffff0c;
+  border-radius: 11px;
+  box-shadow: 0 2px 5px #0003;
+}
+.library-empty {
+  padding: 38px 0;
+  margin: 0;
+  color: var(--label-tertiary);
+  text-align: center;
+  font-size: 13px;
+}
+.library [role='tabpanel']:focus-visible {
+  outline: 1px solid var(--label-tertiary);
+  outline-offset: 8px;
+  border-radius: 12px;
+}
+.library[data-tab='gallery'] .file-list:empty {
+  margin: 0;
+}
+@media (pointer: coarse) {
+  .dashboard-tabs button {
+    min-height: 44px;
+  }
+}
+
+.library .file-list {
+  margin-top: 0;
+}
+.library[data-tab='gallery'] .file-list:not(:empty) {
+  margin-top: 24px;
+}

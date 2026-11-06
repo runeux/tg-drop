@@ -7,7 +7,7 @@ import type { IncomingMessage } from 'node:http';
 import PQueue from 'p-queue';
 import type { Config } from './config.js';
 import { FileDatabase, type FileRecord } from './database.js';
-import type { FileStorage } from './storage/types.js';
+import type { ByteRange, FileStorage } from './storage/types.js';
 import type { DropFile } from '../shared/files.js';
 import { generateCode } from './security.js';
 import { HttpError } from './errors.js';
@@ -207,13 +207,18 @@ export class Files {
     return file;
   }
 
-  async open(id: string) {
+  ready(id: string) {
     const file = this.db.get(id);
     if (!file || file.status !== 'ready' || !file.storageKey)
       throw new HttpError(404, 'File not found.');
+    return { ...file, storageKey: file.storageKey };
+  }
+
+  async open(id: string, range?: ByteRange) {
+    const file = this.ready(id);
     this.downloading.set(id, (this.downloading.get(id) ?? 0) + 1);
     try {
-      const stream = await this.storage.open(file.storageKey);
+      const stream = await this.storage.open(file.storageKey, range);
       return { file, stream };
     } catch (error) {
       this.releaseDownload(id);

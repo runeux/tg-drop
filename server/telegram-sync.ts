@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
+  Photo,
   RawDocument,
+  Video,
   type Message,
   type TelegramClient,
   type TextWithEntities,
@@ -9,6 +11,13 @@ import PQueue from 'p-queue';
 import { FileDatabase } from './database.js';
 import { generateCode } from './security.js';
 import { TELEGRAM_CHAT_ID } from './telegram-chat.js';
+
+const videoExtensions: Record<string, string> = {
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'video/quicktime': '.mov',
+  'image/gif': '.gif',
+};
 
 export interface SavedDocument {
   id: number;
@@ -69,21 +78,31 @@ export function captionWithCode(
   };
 }
 
-export function telegramSyncPort(client: TelegramClient): TelegramSyncPort {
+export function telegramSyncPort(
+  client: Pick<TelegramClient, 'iterHistory' | 'onNewMessage' | 'editMessage'>,
+): TelegramSyncPort {
   const normalize = (message: Message): SavedDocument | null => {
     if (
       message.chat.id !== TELEGRAM_CHAT_ID ||
-      !(message.media instanceof RawDocument)
+      !(message.media instanceof RawDocument || message.media instanceof Photo)
     )
       return null;
     const media = message.media;
     const size = media.fileSize;
     if (!size || size > Number.MAX_SAFE_INTEGER) return null;
+    const photo = media instanceof Photo;
+    const mime = photo ? 'image/jpeg' : media.mimeType;
+    const name = photo
+      ? `photo-${message.id}.jpg`
+      : (media.fileName ??
+        (media instanceof Video
+          ? `video-${message.id}${videoExtensions[mime] ?? ''}`
+          : `file-${message.id}`));
     return {
       id: message.id,
-      name: media.fileName ?? `file-${message.id}`,
+      name,
       size,
-      mime: media.mimeType,
+      mime,
       createdAt: message.date.getTime(),
       caption: message.textWithEntities,
       editable: message.forward === null,

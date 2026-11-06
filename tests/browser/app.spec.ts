@@ -190,7 +190,14 @@ test('screenshots', async ({ page }, info) => {
       buffer: Buffer.from('preview image'),
     },
   ]);
-  await expect(page.getByRole('button', { name: /Copy code/ })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /Copy code/ })).toHaveCount(2);
+  await page.getByRole('tab', { name: 'gallery' }).click();
+  await expect(
+    page.getByRole('article', { name: 'wallpaper.heic' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Copy code/ })).toHaveCount(1);
+  await page.getByRole('tab', { name: 'files' }).click();
+  await expect(page.locator('.tab-indicator')).toHaveCSS('transform', 'none');
   for (const row of await page.getByRole('listitem').all()) {
     await expect(row).toHaveCSS('opacity', '1');
     await expect(row).toHaveCSS('transform', 'none');

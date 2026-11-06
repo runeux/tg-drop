@@ -270,11 +270,13 @@ button {
 }
 
 .screen-upload {
-  max-width: 616px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 .dropzone {
   width: 100%;
+  max-width: 616px;
+  margin-inline: auto;
   height: 236px;
   display: flex;
   flex-direction: column;
@@ -302,8 +304,9 @@ button {
   letter-spacing: 0;
 }
 .file-list {
+  max-width: 616px;
   position: relative;
-  margin: 28px 0 0;
+  margin: 28px auto 0;
   padding: 0;
   list-style: none;
 }

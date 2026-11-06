@@ -8,11 +8,11 @@ import {
 import Uppy, { type UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
 import { ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { z } from 'zod';
 import { filesResponseSchema, type DropFile } from '../shared/files';
 import { api, ApiError, message, okSchema } from './api';
-import { SavedFile } from './FileRow';
+import { Library } from './Library';
 import { validateFile } from './selection';
 
 type UploadMeta = { uploadId: string; createdAt: number; order: number };
@@ -364,27 +364,22 @@ export default function Uploads({
           </button>
         </p>
       )}
-      <ul className="file-list" aria-label="Files" aria-busy={!loaded}>
-        <AnimatePresence initial={false} mode="popLayout">
-          {listedFiles.map(({ file, local }) => (
-            <SavedFile
-              key={file.id}
-              file={file}
-              local={Boolean(local)}
-              detail={
-                local
-                  ? local.error ||
-                    (local.progress.uploadComplete
-                      ? 'saving'
-                      : `uploading · ${local.progress.percentage ?? 0}%`)
-                  : undefined
-              }
-              remove={local ? () => cancel(local) : () => remove(file.id)}
-              retry={local ? () => retryLocal(local) : () => retry(file.id)}
-            />
-          ))}
-        </AnimatePresence>
-      </ul>
+      <Library
+        loaded={loaded}
+        remove={remove}
+        entries={listedFiles.map(({ file, local }) => ({
+          file,
+          local: Boolean(local),
+          detail: local
+            ? local.error ||
+              (local.progress.uploadComplete
+                ? 'saving'
+                : `uploading · ${local.progress.percentage ?? 0}%`)
+            : undefined,
+          remove: local ? () => cancel(local) : () => remove(file.id),
+          retry: local ? () => retryLocal(local) : () => retry(file.id),
+        }))}
+      />
       {!loaded && !error && !connectionError && (
         <div className="list-loading" aria-label="Loading files">
           <LoaderCircle size={18} className="spinning" />

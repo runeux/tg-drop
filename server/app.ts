@@ -9,6 +9,8 @@ import { stream as streamResponse } from 'hono/streaming';
 import { z, ZodError } from 'zod';
 import { HttpError } from './errors.js';
 import { formatSize } from '../shared/files.js';
+import { mediaType } from '../shared/media.js';
+import { byteRange } from './byte-range.js';
 import {
   normalizeCode,
   signToken,
@@ -66,6 +68,11 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     name: file.name,
     size: file.size,
     url: `/api/download/${signToken(config.SESSION_SECRET, 'file-download', file.id, 10 * 60_000)}`,
+  });
+
+  app.use('/api/files/:id/preview', async (c, next) => {
+    await next();
+    c.header('Content-Security-Policy', "sandbox; default-src 'none'");
   });
 
   app.use(
@@ -164,16 +171,47 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     return c.json(downloadDetails(file));
   });
 
-  const sendFile = async (c: AppContext, id: string) => {
-    if (c.req.method === 'HEAD') return c.body(null, 405);
+  const sendFile = async (c: AppContext, id: string, preview = false) => {
+    if (!preview && c.req.method === 'HEAD') return c.body(null, 405);
     if (c.req.header('sec-purpose')?.includes('prefetch'))
       throw new HttpError(403, 'Prefetch is disabled.');
-    const { file, stream } = await files.open(id);
-    if (c.env.outgoing.destroyed || c.req.raw.signal.aborted) {
-      stream.destroy();
-      files.finishDownload(file);
+    const metadata = files.ready(id);
+    const mime = preview ? mediaType(metadata) : 'application/octet-stream';
+    if (!mime) throw new HttpError(415, 'Preview unavailable.');
+    let range;
+    if (preview) {
+      c.header('Accept-Ranges', 'bytes');
+      const header = c.req.header('range');
+      if (header && !c.req.header('if-range')) {
+        try {
+          range = byteRange(header, metadata.size);
+        } catch (error) {
+          c.header('Content-Range', `bytes */${metadata.size}`);
+          throw error;
+        }
+      }
+    }
+    const transfer =
+      preview && c.req.method === 'HEAD' ? null : await files.open(id, range);
+    if (transfer && (c.env.outgoing.destroyed || c.req.raw.signal.aborted)) {
+      transfer.stream.destroy();
+      files.finishDownload(transfer.file);
       return c.body(null, 400);
     }
+    c.header('Content-Type', mime);
+    c.header(
+      'Content-Length',
+      String(range ? range.end - range.start + 1 : metadata.size),
+    );
+    if (range) {
+      c.status(206);
+      c.header(
+        'Content-Range',
+        `bytes ${range.start}-${range.end}/${metadata.size}`,
+      );
+    }
+    if (!transfer) return c.body(null);
+    const { file, stream } = transfer;
     let finished = false;
     const settle = () => {
       if (finished) return;
@@ -187,11 +225,9 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       /['()*]/g,
       (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
     );
-    c.header('Content-Type', 'application/octet-stream');
-    c.header('Content-Length', String(file.size));
     c.header(
       'Content-Disposition',
-      `attachment; filename="download"; filename*=UTF-8''${encoded}`,
+      `${preview ? 'inline' : 'attachment'}; filename="download"; filename*=UTF-8''${encoded}`,
     );
     return streamResponse(
       c,
@@ -222,6 +258,9 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     await next();
   });
   app.get('/api/files', (c) => c.json({ files: files.list() }));
+  app.on(['GET', 'HEAD'], '/api/files/:id/preview', (c) =>
+    sendFile(c, c.req.param('id'), true),
+  );
   app.on(['GET', 'HEAD'], '/api/files/:id/download', (c) =>
     sendFile(c, c.req.param('id')),
   );
