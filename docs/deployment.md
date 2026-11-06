@@ -47,7 +47,7 @@ sqlite and the telegram session are required to recover file access. back up `/s
 
 - the password is verified against a salted scrypt hash on the server. successful password entry creates a random 256-bit session token in an httponly, secure (https), samesite=strict cookie scoped to `/api`.
 - sqlite stores only an hmac digest bound to the session secret and password hash. sessions have no server-side expiry and survive restarts. changing either secret invalidates existing sessions.
-- the cookie uses the browser maximum of 400 days and renews whenever `/api/session` restores a valid session. clearing cookies, private browsing cleanup, or browser eviction can still require another login.
+- the server requests a 400-day cookie lifetime and renews it whenever `/api/session` restores a valid session. browsers may enforce a shorter lifetime. clearing cookies, private browsing cleanup, or browser eviction can still require another login.
 - startup checks the session before rendering the entry form, so returning users go straight to uploads without a password-form flash.
 - the top-left back button revokes the session in sqlite, clears the cookie and unmounts uploads. failed logout stays on the dashboard and shows an error so it can be retried.
 - all `/api/files` routes require a valid session, including listing, upload, owner download, delete and retry. api responses are not cached; writes also require the configured origin.

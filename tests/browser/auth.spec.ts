@@ -13,7 +13,28 @@ test('restores login without flashing the entry form and back revokes it', async
     (entry) => entry.name === 'drop_session',
   );
   expect(cookie?.httpOnly).toBe(true);
-  expect(cookie?.expires).toBeGreaterThan(Date.now() / 1000 + 399 * 86400);
+  // compare against the browser's own expiry policy; linux webkit caps earlier.
+  await page.route('**/api/session-cookie-policy', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Set-Cookie':
+          'drop_policy_reference=1; Max-Age=34560000; Path=/api; HttpOnly; SameSite=Strict',
+      },
+      body: 'ok',
+    }),
+  );
+  await page.evaluate(() => fetch('/api/session-cookie-policy'));
+  const reference = (await context.cookies()).find(
+    (entry) => entry.name === 'drop_policy_reference',
+  );
+  expect(reference).toBeDefined();
+  expect(cookie).toBeDefined();
+  if (!cookie || !reference) throw new Error('missing persistent cookie');
+  expect(cookie.expires).toBeGreaterThan(Date.now() / 1000);
+  expect(Math.abs(cookie.expires - reference.expires)).toBeLessThan(5);
+  await context.clearCookies({ name: 'drop_policy_reference' });
+  await page.unroute('**/api/session-cookie-policy');
 
   const returning = await browser.newContext({
     storageState: await context.storageState(),
