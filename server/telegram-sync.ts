@@ -8,6 +8,7 @@ import {
 import PQueue from 'p-queue';
 import { FileDatabase } from './database.js';
 import { generateCode } from './security.js';
+import { TELEGRAM_CHAT_ID } from './telegram-chat.js';
 
 export interface SavedDocument {
   id: number;
@@ -68,12 +69,12 @@ export function captionWithCode(
   };
 }
 
-export function telegramSyncPort(
-  client: TelegramClient,
-  selfId: number,
-): TelegramSyncPort {
+export function telegramSyncPort(client: TelegramClient): TelegramSyncPort {
   const normalize = (message: Message): SavedDocument | null => {
-    if (message.chat.id !== selfId || !(message.media instanceof RawDocument))
+    if (
+      message.chat.id !== TELEGRAM_CHAT_ID ||
+      !(message.media instanceof RawDocument)
+    )
       return null;
     const media = message.media;
     const size = media.fileSize;
@@ -90,7 +91,7 @@ export function telegramSyncPort(
   };
   return {
     async *history() {
-      for await (const message of client.iterHistory('self', {
+      for await (const message of client.iterHistory(TELEGRAM_CHAT_ID, {
         chunkSize: 100,
       })) {
         const file = normalize(message);
@@ -106,7 +107,7 @@ export function telegramSyncPort(
       return () => client.onNewMessage.remove(callback);
     },
     async edit(id, text) {
-      await client.editMessage({ chatId: 'self', message: id, text });
+      await client.editMessage({ chatId: TELEGRAM_CHAT_ID, message: id, text });
     },
   };
 }

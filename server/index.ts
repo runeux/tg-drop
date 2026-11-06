@@ -12,16 +12,15 @@ import { TelegramSync, telegramSyncPort } from './telegram-sync.js';
 const config = readConfig();
 await mkdir(config.DATA_DIR, { recursive: true, mode: 0o700 });
 const client = config.STORAGE === 'telegram' ? telegramClient(config) : null;
-const self = client ? await client.start({}) : null;
+if (client) await client.start({});
 const storage = client
   ? new TelegramStorage(client)
   : new LocalStorage(join(config.DATA_DIR, 'objects'));
 const files = new Files(config, storage);
 await files.start();
-const sync =
-  client && self
-    ? new TelegramSync(telegramSyncPort(client, self.id), files.db)
-    : null;
+const sync = client
+  ? new TelegramSync(telegramSyncPort(client), files.db)
+  : null;
 sync?.start();
 const app = createApp(config, files);
 const server = serve(

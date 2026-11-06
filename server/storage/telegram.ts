@@ -1,5 +1,6 @@
 import { RawDocument, TelegramClient } from '@mtcute/node';
 import { captionWithCode } from '../telegram-sync.js';
+import { TELEGRAM_CHAT_ID } from '../telegram-chat.js';
 import { join } from 'node:path';
 import type { Config } from '../config.js';
 import type { FileRecord } from '../database.js';
@@ -33,7 +34,7 @@ export class TelegramStorage implements FileStorage {
     const marker = `tg-drop · ${file.id}`;
     const caption = captionWithCode({ text: marker }, file.code);
     const existing = await this.client.searchMessages({
-      chatId: 'self',
+      chatId: TELEGRAM_CHAT_ID,
       query: file.id,
       limit: 1,
     });
@@ -46,14 +47,14 @@ export class TelegramStorage implements FileStorage {
       const annotated = captionWithCode(original, file.code);
       if (annotated !== original)
         await this.client.editMessage({
-          chatId: 'self',
+          chatId: TELEGRAM_CHAT_ID,
           message: stored.id,
           text: annotated,
         });
       return String(stored.id);
     }
     const message = await this.client.sendMedia(
-      'self',
+      TELEGRAM_CHAT_ID,
       {
         type: 'document',
         file: `file:${path}`,
@@ -72,7 +73,10 @@ export class TelegramStorage implements FileStorage {
 
   async open(key: string) {
     // resolve the message each time so telegram file references stay fresh.
-    const [message] = await this.client.getMessages('self', Number(key));
+    const [message] = await this.client.getMessages(
+      TELEGRAM_CHAT_ID,
+      Number(key),
+    );
     if (!message?.media || !(message.media instanceof RawDocument))
       throw new Error('stored file is unavailable');
     return this.client.downloadAsNodeStream(message.media);
@@ -80,7 +84,7 @@ export class TelegramStorage implements FileStorage {
 
   async remove(key: string) {
     const messages = (
-      await this.client.getMessages('self', Number(key))
+      await this.client.getMessages(TELEGRAM_CHAT_ID, Number(key))
     ).filter((message) => message !== null);
     if (messages.length)
       await this.client.deleteMessages(messages, { revoke: true });

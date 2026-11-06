@@ -12,7 +12,7 @@
 
 enter a password to upload or a code to download. drop anywhere. click a filename to download, or its code to copy.
 
-password protected uploads · telegram storage · saved messages sync · manual removal
+password protected uploads · telegram storage · private channel sync · manual removal
 
 ### run
 

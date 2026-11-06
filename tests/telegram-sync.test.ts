@@ -50,7 +50,7 @@ test('code captions preserve original text and entities and use UTF-16 offsets',
   assert.equal(captionWithCode(annotated, code), annotated);
 });
 
-test('saved-message import is idempotent and app-owned messages reuse the existing code', async () => {
+test('channel import is idempotent and app-owned messages reuse the existing code', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tg-drop-sync-'));
   const db = new FileDatabase(directory);
   const edits: { id: number; caption: TextWithEntities }[] = [];
