@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   generateCode,
   hashPassword,
-  normalizeCode,
+  normalizeGeneratedCode,
   signToken,
   verifyPassword,
   verifyToken,
@@ -13,12 +13,18 @@ test('codes normalize spaces and case, reject ambiguous characters', () => {
   for (let index = 0; index < 1000; index++) {
     const code = generateCode();
     assert.match(code, /^[2-9A-HJ-NP-Z]{4}(?:-[2-9A-HJ-NP-Z]{4}){3}$/);
-    assert.equal(normalizeCode(code.toLowerCase().replaceAll('-', ' ')), code);
+    assert.equal(
+      normalizeGeneratedCode(code.toLowerCase().replaceAll('-', ' ')),
+      code,
+    );
   }
-  assert.equal(normalizeCode('0000-OOOO-IIII'), null);
-  assert.equal(normalizeCode('ABCD'), null);
-  assert.equal(normalizeCode('abcd efgh jklm'), null);
-  assert.equal(normalizeCode('abcd efgh jklm npqr'), 'ABCD-EFGH-JKLM-NPQR');
+  assert.equal(normalizeGeneratedCode('0000-OOOO-IIII'), null);
+  assert.equal(normalizeGeneratedCode('ABCD'), null);
+  assert.equal(normalizeGeneratedCode('abcd efgh jklm'), null);
+  assert.equal(
+    normalizeGeneratedCode('abcd efgh jklm npqr'),
+    'ABCD-EFGH-JKLM-NPQR',
+  );
 });
 
 test('password hashes are salted and verified', () => {

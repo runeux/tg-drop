@@ -9,7 +9,11 @@ import type { Config } from './config.js';
 import { FileDatabase, type FileRecord } from './database.js';
 import type { ByteRange, FileStorage } from './storage/types.js';
 import type { DropFile } from '../shared/files.js';
-import { generateCode } from './security.js';
+import {
+  generateCode,
+  normalizeCustomCode,
+  normalizeGeneratedCode,
+} from './security.js';
 import { HttpError } from './errors.js';
 import { imageDimensions, probeDimensions } from './media-dimensions.js';
 import { mediaKind } from '../shared/media.js';
@@ -231,8 +235,12 @@ export class Files {
       });
   }
 
-  lookup(code: string) {
-    const file = this.db.byCode(code);
+  lookup(value: string) {
+    const code = normalizeCustomCode(value);
+    const generated = normalizeGeneratedCode(value);
+    const file =
+      (code && this.db.byCode(code)) ||
+      (generated && generated !== code && this.db.byCode(generated));
     if (!file) throw new HttpError(404, 'Code not found.');
     return file;
   }

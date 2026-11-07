@@ -8,10 +8,12 @@ export default function GalleryViewer({
   file,
   close,
   remove,
+  editCode,
 }: {
   file: DropFile;
   close: () => void;
   remove: () => Promise<void>;
+  editCode: (file: DropFile) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [failed, setFailed] = useState(false);
@@ -50,7 +52,7 @@ export default function GalleryViewer({
           <span>{file.name}</span>
           <small>{formatSize(file.size)}</small>
         </div>
-        <GalleryActions file={file} />
+        <GalleryActions file={file} editCode={editCode} />
         <button
           className="gallery-action"
           disabled={busy}

@@ -56,6 +56,10 @@ test('channel import is idempotent and app-owned messages reuse the existing cod
   const edits: { id: number; caption: TextWithEntities }[] = [];
   const port: TelegramSyncPort = {
     async *history() {},
+    async read(id) {
+      const latest = edits.at(-1);
+      return latest ? { ...file, id, caption: latest.caption } : null;
+    },
     subscribe() {
       return () => {};
     },
@@ -83,6 +87,9 @@ test('channel import is idempotent and app-owned messages reuse the existing cod
     await sync.import({ ...file, caption: edited.caption });
     assert.equal(db.list().length, 1);
     assert.equal(edits.length, 1);
+    await sync.updateCode(file.id, first.code, 'VPN');
+    await sync.updateCode(file.id, 'VPN', 'NOTES');
+    assert.equal(edits.at(-1)?.caption.text, 'my notes\n\nNOTES');
     db.insert({
       id: '12345678-1234-1234-1234-123456789abc',
       name: 'app.txt',

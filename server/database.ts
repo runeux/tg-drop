@@ -5,7 +5,8 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { join } from 'node:path';
 import type { DropFile } from '../shared/files.js';
-import { generateCode } from './security.js';
+import { generateCode, normalizeGeneratedCode } from './security.js';
+import { HttpError } from './errors.js';
 
 const files = sqliteTable('files', {
   id: text().primaryKey(),
@@ -70,26 +71,35 @@ export class FileDatabase {
     );
     this.authLimiter = new AuthLimiter(this.sqlite);
     this.db = drizzle(this.sqlite);
-    this.sqlite.transaction(() => {
-      const existing = this.db
-        .select({ id: files.id, code: files.code })
-        .from(files)
-        .all();
-      for (const file of existing) {
-        if (file.code.replaceAll('-', '').length === 16) continue;
-        let code: string;
-        do {
-          code = generateCode();
-        } while (
+    this.sqlite
+      .transaction(() => {
+        // run the old code migration once so later edits survive restarts.
+        if (this.sqlite.pragma('user_version', { simple: true }) !== 0) return;
+        const existing = this.db
+          .select({ id: files.id, code: files.code })
+          .from(files)
+          .all();
+        for (const file of existing) {
+          if (file.code.replaceAll('-', '').length === 16) continue;
+          let code: string;
+          do {
+            code = generateCode();
+          } while (
+            this.db
+              .select({ id: files.id })
+              .from(files)
+              .where(eq(files.code, code))
+              .get()
+          );
           this.db
-            .select({ id: files.id })
-            .from(files)
-            .where(eq(files.code, code))
-            .get()
-        );
-        this.db.update(files).set({ code }).where(eq(files.id, file.id)).run();
-      }
-    })();
+            .update(files)
+            .set({ code })
+            .where(eq(files.id, file.id))
+            .run();
+        }
+        this.sqlite.pragma('user_version = 1');
+      })
+      .immediate();
     this.db
       .update(files)
       .set({ status: 'queued' })
@@ -123,6 +133,30 @@ export class FileDatabase {
       .from(files)
       .where(and(eq(files.code, code), eq(files.status, 'ready')))
       .get();
+  }
+  changeCode(id: string, code: string) {
+    return this.sqlite
+      .transaction(() => {
+        const file = this.get(id);
+        if (!file || file.status !== 'ready')
+          throw new HttpError(404, 'File not found.');
+        const generated = normalizeGeneratedCode(code);
+        const taken = this.db
+          .select({ id: files.id })
+          .from(files)
+          .where(
+            inArray(
+              files.code,
+              generated && generated !== code ? [code, generated] : [code],
+            ),
+          )
+          .all();
+        if (taken.some((entry) => entry.id !== id))
+          throw new HttpError(409, 'That code is already taken.');
+        this.db.update(files).set({ code }).where(eq(files.id, id)).run();
+        return file;
+      })
+      .immediate();
   }
   list() {
     return this.db

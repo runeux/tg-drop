@@ -22,7 +22,17 @@ const sync = client
   ? new TelegramSync(telegramSyncPort(client), files.db)
   : null;
 sync?.start();
-const app = createApp(config, files);
+const app = createApp(config, files, true, (file, code) => {
+  if (!sync || !file.storageKey) return;
+  void sync
+    .updateCode(Number(file.storageKey), file.code, code)
+    .catch((error: unknown) =>
+      console.error(
+        'telegram caption sync failed',
+        error instanceof Error ? error.message : 'unknown',
+      ),
+    );
+});
 const server = serve(
   { fetch: app.fetch, hostname: config.HOST, port: config.PORT },
   ({ port }) => console.log(`drop listening on ${config.HOST}:${port}`),

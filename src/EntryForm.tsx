@@ -7,12 +7,21 @@ import {
 } from 'motion/react';
 import { ArrowLeft, ArrowRight, LoaderCircle } from 'lucide-react';
 import { api, message } from './api';
-import { resolveSchema, formatSize } from '../shared/files';
+import { downloadSchema, resolveSchema, formatSize } from '../shared/files';
 import { EntryDownload, type Download } from './EntryDownload';
+import { HotkeyBadge } from './HotkeyBadge';
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-export function EntryForm({ onPassword }: { onPassword?: () => void }) {
+export function EntryForm({
+  sharePath,
+  clearSharePath,
+  onPassword,
+}: {
+  sharePath: string;
+  clearSharePath: () => void;
+  onPassword: () => void;
+}) {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,10 +43,45 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
     if (!isPresent) request.current?.abort();
   }, [isPresent]);
 
+  useEffect(() => {
+    if (!sharePath) return;
+    const controller = new AbortController();
+    request.current = controller;
+    async function lookup() {
+      let code: string;
+      try {
+        code = decodeURIComponent(sharePath);
+      } catch {
+        setError('Code not found.');
+        request.current = null;
+        return;
+      }
+      setBusy(true);
+      try {
+        const result = await api('/lookup', downloadSchema, {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) setDownload(result);
+      } catch (error) {
+        if (!controller.signal.aborted) setError(message(error));
+      } finally {
+        if (request.current === controller) {
+          request.current = null;
+          setBusy(false);
+        }
+      }
+    }
+    void lookup();
+    return () => controller.abort();
+  }, [sharePath]);
+
   const reset = useCallback(() => {
+    clearSharePath();
     setDownload(null);
     setValue('');
-  }, []);
+  }, [clearSharePath]);
 
   useEffect(() => {
     if (!download || !isPresent) return;
@@ -51,6 +95,7 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!value.trim() || busy || download) return;
+    clearSharePath();
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -62,11 +107,8 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
-      if (result.kind === 'upload') onPassword?.();
-      else {
-        setDownload(result);
-        window.location.assign(result.url);
-      }
+      if (result.kind === 'upload') onPassword();
+      else setDownload(result);
     } catch (error) {
       if (controller.signal.aborted) return;
       setError(message(error));
@@ -140,6 +182,7 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
       </form>
       <motion.button
         className="entry-reset"
+        aria-keyshortcuts="Escape"
         type="button"
         tabIndex={0}
         inert={!download}
@@ -158,8 +201,9 @@ export function EntryForm({ onPassword }: { onPassword?: () => void }) {
         }}
         onClick={reset}
       >
-        <ArrowLeft size={13} aria-hidden="true" />
-        another code
+        <ArrowLeft size={13} aria-hidden="true" className="entry-reset-arrow" />
+        back
+        <HotkeyBadge>Esc</HotkeyBadge>
       </motion.button>
       <span className="visually-hidden" role="status">
         {download

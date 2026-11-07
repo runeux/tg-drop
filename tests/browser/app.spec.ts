@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
-import { filesResponseSchema } from '../../shared/files';
+import { downloadSchema, filesResponseSchema } from '../../shared/files';
 
 test.beforeEach(async ({ context }, info) => {
   // each isolated browser context represents a different client for rate limiting.
@@ -45,7 +45,7 @@ async function dropFile(page: Page, name: string) {
   }, name);
 }
 
-test('password gate, automatic upload, copy code and repeatable automatic downloads', async ({
+test('password gate, automatic upload, copy code and repeatable manual downloads', async ({
   page,
   context,
   browserName,
@@ -86,11 +86,7 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
     .getByRole('button', { name: 'Continue' })
     .boundingBox();
   const formBounds = await page.locator('.entry-form').boundingBox();
-  const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Continue' }).click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe(name);
-  expect(await download.failure()).toBeNull();
   const downloadButton = page.getByRole('link', { name: `Download ${name}` });
   await expect(downloadButton).toBeFocused();
   await expect(page.locator('.entry-form')).toHaveCSS('height', '66px');
@@ -103,8 +99,10 @@ test('password gate, automatic upload, copy code and repeatable automatic downlo
   await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
   const repeatPromise = page.waitForEvent('download');
   await downloadButton.click();
-  expect(await (await repeatPromise).failure()).toBeNull();
-  await page.getByRole('button', { name: 'another code' }).click();
+  const download = await repeatPromise;
+  expect(download.suggestedFilename()).toBe(name);
+  expect(await download.failure()).toBeNull();
+  await page.getByRole('button', { name: 'back', exact: true }).click();
   await expect(page.getByLabel('Code or password')).toBeFocused();
   await expect(page.getByLabel('Code or password')).toHaveValue('');
   await unlock(page);
@@ -150,6 +148,110 @@ test('whole-page drop waits for password and files persist until manual removal'
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test('dashboard code edits replace the old code and share links wait for a click', async ({
+  page,
+  browser,
+}) => {
+  const origin = 'http://127.0.0.1:4173';
+  await page.goto('/');
+  await unlock(page);
+  await dropFile(page, 'vpn.txt');
+  await dropFile(page, 'other.txt');
+  const row = page.getByRole('listitem').filter({ hasText: 'vpn.txt' });
+  const otherRow = page.getByRole('listitem').filter({ hasText: 'other.txt' });
+  await expect(row.locator('.code-value')).toBeVisible();
+  await expect(otherRow.locator('.code-value')).toBeVisible();
+  const original = await row.locator('.code-value').innerText();
+  const taken = await otherRow.locator('.code-value').innerText();
+  const lookup = (code: string) =>
+    page.request.post('/api/lookup', {
+      headers: { Origin: origin },
+      data: { code },
+    });
+  const before = await lookup(original);
+  expect(before.ok()).toBe(true);
+  const { url } = downloadSchema.parse(await before.json());
+
+  const edit = row.getByRole('button', { name: 'Edit code for vpn.txt' });
+  await edit.click();
+  const dialog = page.getByRole('dialog', { name: 'edit code' });
+  const input = dialog.getByRole('textbox', { name: 'Custom code' });
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue(original);
+  await input.fill(taken.toLowerCase().replaceAll('-', ''));
+  await input.press('Enter');
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'That code is already taken.',
+  );
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(dialog.locator('form')).toHaveCSS('border-top-width', '1px');
+  await expect(dialog.locator('form')).toHaveCSS(
+    'border-top-color',
+    'rgb(255, 130, 123)',
+  );
+  await input.fill('api');
+  await input.press('Enter');
+  await expect(dialog.getByRole('alert')).toHaveText('That code is reserved.');
+  await input.fill('TEST-PASSWORD');
+  await input.press('Enter');
+  await expect(dialog.getByRole('alert')).toHaveText('That code is reserved.');
+  await input.fill('vpn/setup');
+  await input.press('Enter');
+  await expect(dialog.getByRole('alert')).toContainText('Use 1–64');
+  await input.fill('vpn');
+  await dialog.getByRole('button', { name: 'Save code' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(edit).toBeFocused();
+  await expect(
+    row.getByRole('button', { name: 'Copy code VPN' }),
+  ).toBeVisible();
+  expect((await lookup(original)).status()).toBe(404);
+  expect((await page.request.get(url)).status()).toBe(404);
+
+  // an authenticated visit still follows the share path.
+  await page.goto('/vpn');
+  await expect(
+    page.getByRole('link', { name: 'Download vpn.txt' }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(`${origin}/`);
+
+  const recipient = await browser.newContext({
+    baseURL: origin,
+    extraHTTPHeaders: {
+      'X-Forwarded-For': `recipient-${test.info().project.name}`,
+    },
+  });
+  try {
+    const share = await recipient.newPage();
+    const downloads: string[] = [];
+    share.on('download', (download) =>
+      downloads.push(download.suggestedFilename()),
+    );
+    await share.goto('/vpn');
+    const button = share.getByRole('link', { name: 'Download vpn.txt' });
+    await expect(button).toBeFocused();
+    await expect(
+      share.getByRole('button', { name: 'back', exact: true }).locator('kbd'),
+    ).toHaveText('Esc');
+    expect(downloads).toEqual([]);
+    const transfer = share.waitForEvent('download');
+    await button.click();
+    expect((await transfer).suggestedFilename()).toBe('vpn.txt');
+    await share.getByRole('button', { name: 'back', exact: true }).click();
+    await expect(share).toHaveURL(`${origin}/`);
+    await share.getByLabel('Code or password').fill('Vpn');
+    await share.getByRole('button', { name: 'Continue' }).click();
+    await expect(button).toBeVisible();
+    expect(downloads).toEqual(['vpn.txt']);
+    await share.goto('/test-password');
+    await expect(share.getByRole('alert')).toHaveText('Code not found.');
+    expect((await share.request.get('/api/files')).status()).toBe(401);
+  } finally {
+    await recipient.close();
+  }
 });
 
 test('keyboard navigation and reduced motion remain usable', async ({

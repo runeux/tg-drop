@@ -20,7 +20,20 @@ export function generateCode() {
   return code.match(/.{4}/g)!.join('-');
 }
 
-export function normalizeCode(code: string) {
+const reservedCodes = new Set(['API', 'ASSETS', 'FAVICON.SVG', 'INDEX.HTML']);
+
+export function normalizeCustomCode(value: string) {
+  const code = value.trim();
+  if (!/^[a-z0-9._~-]{1,64}$/i.test(code) || code === '.' || code === '..')
+    return null;
+  return code.toUpperCase();
+}
+
+export function isReservedCode(code: string) {
+  return reservedCodes.has(code);
+}
+
+export function normalizeGeneratedCode(code: string) {
   const compact = code.toUpperCase().replace(/[\s-]/g, '');
   if (
     compact.length !== 16 ||

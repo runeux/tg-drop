@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Download } from 'lucide-react';
+import { Check, Copy, Download, Pencil } from 'lucide-react';
 import type { DropFile } from '../shared/files';
 
-export function GalleryActions({ file }: { file: DropFile }) {
+export function GalleryActions({
+  file,
+  editCode,
+}: {
+  file: DropFile;
+  editCode: (file: DropFile) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -38,6 +44,14 @@ export function GalleryActions({ file }: { file: DropFile }) {
         title={copied ? 'Copied' : 'Copy code'}
       >
         {copied ? <Check size={18} /> : <Copy size={17} strokeWidth={1.7} />}
+      </button>
+      <button
+        className="gallery-action"
+        onClick={() => editCode(file)}
+        aria-label={`Edit code for ${file.name}`}
+        title="Edit code"
+      >
+        <Pencil size={17} strokeWidth={1.7} />
       </button>
       <span
         className={failed ? 'gallery-copy-error' : 'visually-hidden'}

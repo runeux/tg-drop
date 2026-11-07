@@ -2,7 +2,9 @@ import { lazy, Suspense, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { LoaderCircle } from 'lucide-react';
 import { mediaKind } from '../shared/media';
+import type { DropFile } from '../shared/files';
 import { SavedFile, type SavedFileProps } from './FileRow';
+import { CodeEditor } from './CodeEditor';
 import './library.css';
 
 const Gallery = lazy(() => import('./Gallery'));
@@ -11,12 +13,15 @@ export function Library({
   entries,
   loaded,
   remove,
+  changeCode,
 }: {
   entries: SavedFileProps[];
   loaded: boolean;
   remove: (id: string) => Promise<void>;
+  changeCode: (id: string, code: string) => Promise<void>;
 }) {
   const [tab, setTab] = useState<'files' | 'gallery'>('files');
+  const [editing, setEditing] = useState<DropFile | null>(null);
   const reducedMotion = useReducedMotion();
   const gallery = entries.filter(({ file }) => mediaKind(file));
   const documents = entries.filter(({ file }) => !mediaKind(file));
@@ -94,6 +99,7 @@ export function Library({
                 .filter(({ file }) => file.status === 'ready')
                 .map(({ file }) => file)}
               remove={remove}
+              editCode={setEditing}
             />
           </Suspense>
         )}
@@ -103,7 +109,7 @@ export function Library({
         >
           <AnimatePresence initial={false} mode="popLayout">
             {rows.map((entry) => (
-              <SavedFile key={entry.file.id} {...entry} />
+              <SavedFile key={entry.file.id} {...entry} editCode={setEditing} />
             ))}
           </AnimatePresence>
         </ul>
@@ -115,6 +121,13 @@ export function Library({
           </p>
         )}
       </div>
+      {editing && (
+        <CodeEditor
+          file={editing}
+          close={() => setEditing(null)}
+          save={(code) => changeCode(editing.id, code)}
+        />
+      )}
     </div>
   );
 }

@@ -12,13 +12,15 @@ import { formatSize } from '../shared/files.js';
 import { mediaType } from '../shared/media.js';
 import { byteRange } from './byte-range.js';
 import {
-  normalizeCode,
+  isReservedCode,
+  normalizeCustomCode,
   signToken,
   verifyPassword,
   verifyToken,
 } from './security.js';
 import type { Config } from './config.js';
 import type { Files } from './files.js';
+import type { FileRecord } from './database.js';
 
 const SESSION_COOKIE = 'drop_session';
 // browsers cap persistent cookies at 400 days; active sessions renew this window.
@@ -31,7 +33,12 @@ const uploadSchema = z.object({
   mime: z.string().max(128),
 });
 
-export function createApp(config: Config, files: Files, serveClient = true) {
+export function createApp(
+  config: Config,
+  files: Files,
+  serveClient = true,
+  onCodeChange?: (file: FileRecord, code: string) => void,
+) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const sessionDigest = (token: string) =>
     createHmac('sha256', config.SESSION_SECRET)
@@ -60,14 +67,19 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     files.db.createSession(sessionDigest(token));
     persistSession(c, token);
   };
-  const downloadDetails = (file: {
-    id: string;
-    name: string;
-    size: number;
-  }) => ({
+  const downloadSubject = (file: Pick<FileRecord, 'id' | 'code'>) => {
+    const fingerprint = createHmac('sha256', config.SESSION_SECRET)
+      .update('file-code\0')
+      .update(file.id)
+      .update('\0')
+      .update(file.code)
+      .digest('base64url');
+    return `${file.id}:${fingerprint}`;
+  };
+  const downloadDetails = (file: FileRecord) => ({
     name: file.name,
     size: file.size,
-    url: `/api/download/${signToken(config.SESSION_SECRET, 'file-download', file.id, 10 * 60_000)}`,
+    url: `/api/download/${signToken(config.SESSION_SECRET, 'file-download', downloadSubject(file), 10 * 60_000)}`,
   });
 
   app.use('/api/files/:id/preview', async (c, next) => {
@@ -132,9 +144,10 @@ export function createApp(config: Config, files: Files, serveClient = true) {
       unlock(c);
       return c.json({ kind: 'upload' });
     }
-    const code = normalizeCode(value);
-    if (!code) throw new HttpError(404, 'Code not found.');
-    return c.json({ kind: 'download', ...downloadDetails(files.lookup(code)) });
+    return c.json({
+      kind: 'download',
+      ...downloadDetails(files.lookup(value)),
+    });
   });
 
   app.post('/api/session', async (c) => {
@@ -163,12 +176,9 @@ export function createApp(config: Config, files: Files, serveClient = true) {
 
   app.post('/api/lookup', async (c) => {
     const { code } = z
-      .object({ code: z.string().max(64) })
+      .object({ code: z.string().max(256) })
       .parse(await c.req.json());
-    const normalized = normalizeCode(code);
-    if (!normalized) throw new HttpError(404, 'Code not found.');
-    const file = files.lookup(normalized);
-    return c.json(downloadDetails(file));
+    return c.json(downloadDetails(files.lookup(code)));
   });
 
   const sendFile = async (c: AppContext, id: string, preview = false) => {
@@ -244,13 +254,16 @@ export function createApp(config: Config, files: Files, serveClient = true) {
   };
 
   app.on(['GET', 'HEAD'], '/api/download/:token', async (c) => {
-    const id = verifyToken(
+    const subject = verifyToken(
       config.SESSION_SECRET,
       c.req.param('token'),
       'file-download',
     );
-    if (!id) throw new HttpError(404, 'Link expired. Enter the code again.');
-    return sendFile(c, id);
+    const id = subject?.split(':', 1)[0];
+    const file = id ? files.db.get(id) : undefined;
+    if (!file || downloadSubject(file) !== subject)
+      throw new HttpError(404, 'Link expired. Enter the code again.');
+    return sendFile(c, file.id);
   });
 
   app.use('/api/files/*', async (c, next) => {
@@ -258,6 +271,25 @@ export function createApp(config: Config, files: Files, serveClient = true) {
     await next();
   });
   app.get('/api/files', (c) => c.json({ files: files.list() }));
+  app.patch('/api/files/:id/code', bodyLimit({ maxSize: 4096 }), async (c) => {
+    const { code: value } = z
+      .object({ code: z.string() })
+      .parse(await c.req.json());
+    const code = normalizeCustomCode(value);
+    if (!code)
+      throw new HttpError(400, 'Use 1–64 characters from A–Z, 0–9, or . _ ~ -');
+    const spellings = new Set([value.trim(), code, code.toLowerCase()]);
+    if (
+      isReservedCode(code) ||
+      [...spellings].some((value) =>
+        verifyPassword(value, config.PASSWORD_HASH),
+      )
+    )
+      throw new HttpError(409, 'That code is reserved.');
+    const file = files.db.changeCode(c.req.param('id'), code);
+    if (file.code !== code) onCodeChange?.(file, code);
+    return c.json({ code });
+  });
   app.on(['GET', 'HEAD'], '/api/files/:id/preview', (c) =>
     sendFile(c, c.req.param('id'), true),
   );

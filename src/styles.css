@@ -258,6 +258,17 @@ button {
   outline-offset: -3px;
   border-radius: 6px;
 }
+.entry-reset-arrow {
+  transform: translateY(2px);
+}
+.hotkey-badge {
+  padding: 2px 4px;
+  border: 1px solid #ffffff1a;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1;
+}
 .download-button {
   position: absolute;
   top: 8px;
@@ -313,7 +324,7 @@ button {
 .file-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 176px auto;
+  grid-template-columns: minmax(0, 1fr) 204px auto;
   align-items: center;
   column-gap: 18px;
   min-height: 86px;
@@ -382,7 +393,7 @@ button {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  width: 100%;
+  min-width: 0;
   height: 36px;
   padding: 0;
   border-radius: 0;
@@ -390,6 +401,15 @@ button {
   border: 0;
   color: #b8b8c0;
   text-align: left;
+}
+.file-code-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.file-code-slot .row-action {
+  flex-shrink: 0;
 }
 .code-value {
   font:
@@ -400,6 +420,8 @@ button {
     monospace;
   letter-spacing: 0.35px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   user-select: text;
 }
 .code-symbol {
@@ -684,7 +706,7 @@ button {
     margin-top: 22px;
   }
   .file-row {
-    grid-template-columns: minmax(0, 1fr) 170px;
+    grid-template-columns: minmax(0, 1fr) 194px;
     row-gap: 11px;
     column-gap: 12px;
     min-height: 94px;

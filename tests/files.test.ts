@@ -12,7 +12,7 @@ import { readConfig } from '../server/config.js';
 import { Files } from '../server/files.js';
 import { LocalStorage } from '../server/storage/local.js';
 import type { FileRecord } from '../server/database.js';
-import { hashPassword } from '../server/security.js';
+import { hashPassword, verifyToken } from '../server/security.js';
 import {
   downloadSchema,
   filesResponseSchema,
@@ -134,6 +134,15 @@ test('file list and upload require authentication, writes require the correct or
   try {
     assert.equal((await context.request('/files')).status, 401);
     assert.equal(
+      (
+        await context.request('/files/file-id/code', {
+          method: 'PATCH',
+          body: JSON.stringify({ code: 'VPN' }),
+        })
+      ).status,
+      401,
+    );
+    assert.equal(
       (await context.request('/files', { method: 'POST', body: 'private' }))
         .status,
       401,
@@ -172,6 +181,13 @@ test('file codes survive repeated downloads until manual deletion', async () => 
     const file = await context.upload('заметки.txt');
     const download = await context.lookup(file);
     const path = download.url.replace('/api', '');
+    const subject = verifyToken(
+      context.config.SESSION_SECRET,
+      path.slice('/download/'.length),
+      'file-download',
+    );
+    assert.ok(subject);
+    assert.ok(!subject.includes(file.code));
     assert.equal((await context.request(path, { method: 'HEAD' })).status, 405);
     assert.equal(
       (await context.request(path, { headers: { 'Sec-Purpose': 'prefetch' } }))

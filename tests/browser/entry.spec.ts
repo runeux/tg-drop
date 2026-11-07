@@ -45,11 +45,14 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const input = page.getByLabel('Code or password');
     await input.fill(code);
     await expect(page.locator('.screen-entry')).toHaveCSS('transform', 'none');
-    const automatic = page.waitForEvent('download');
+    const downloads: string[] = [];
+    page.on('download', (download) =>
+      downloads.push(download.suggestedFilename()),
+    );
     await input.press('Enter');
-    expect(await (await automatic).failure()).toBeNull();
     const button = page.getByRole('link', { name: `Download ${name}` });
     await expect(button).toBeFocused();
+    expect(downloads).toEqual([]);
     const repeated = page.waitForEvent('download');
     await page.keyboard.press('Enter');
     expect(await (await repeated).failure()).toBeNull();
@@ -58,9 +61,8 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await expect(page.locator('.download-meta')).toContainText('2.4\u00a0MB');
     await expect(page.locator('.entry-form')).toHaveCSS('height', '66px');
     const form = await page.locator('.entry-form').boundingBox();
-    const reset = await page
-      .getByRole('button', { name: 'another code' })
-      .boundingBox();
+    const back = page.getByRole('button', { name: 'back', exact: true });
+    const reset = await back.boundingBox();
     expect(form).not.toBeNull();
     expect(reset).not.toBeNull();
     if (!form || !reset) throw new Error('missing entry controls');
@@ -79,18 +81,15 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       ),
     ).toBe(true);
     await page.keyboard.press('Tab');
-    await expect(
-      page.getByRole('button', { name: 'another code' }),
-    ).toBeFocused();
+    await expect(back).toBeFocused();
     // reverse while the reveal can still be moving, then immediately submit again.
     await page.keyboard.press('Escape');
     await expect(input).toBeFocused();
     await expect(input).toHaveValue('');
     await input.fill(code);
-    const next = page.waitForEvent('download');
     await input.press('Enter');
-    expect(await (await next).failure()).toBeNull();
     await expect(button).toBeFocused();
+    expect(downloads).toEqual([name]);
     // escape also works after focus leaves the result controls.
     await button.evaluate((element) => element.blur());
     await expect(button).not.toBeFocused();
@@ -100,5 +99,8 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await expect(
       page.getByRole('link', { name: `Download ${name}` }),
     ).toHaveCount(0);
+    await page.goto(`/${code}`);
+    await expect(button).toBeFocused();
+    expect(downloads).toEqual([name]);
   });
 }

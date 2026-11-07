@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Copy, LoaderCircle, RotateCcw, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  LoaderCircle,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
 
 export type SavedFileProps = {
@@ -18,8 +26,9 @@ export function SavedFile({
   local,
   remove,
   retry,
+  editCode,
   ref,
-}: SavedFileProps) {
+}: SavedFileProps & { editCode: (file: DropFile) => void }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -99,36 +108,47 @@ export function SavedFile({
       progress={progress}
       code={
         file.status === 'ready' ? (
-          <motion.button
-            className={`file-code ${copied ? 'copied' : ''} ${copyError ? 'copy-error' : ''}`}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
-              void copy();
-            }}
-            aria-label={`Copy code ${file.code}`}
-            title={
-              copyError
-                ? 'Select the code to copy'
-                : copied
-                  ? 'Copied'
-                  : 'Copy code'
-            }
-          >
-            <span className="code-value">{file.code}</span>
-            <span className="code-symbol" aria-hidden="true">
-              <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
-                  key={copied ? 'copied' : 'copy'}
-                  initial={{ opacity: 0, scale: 0.75 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.75 }}
-                  transition={{ duration: 0.16 }}
-                >
-                  {copied ? <Check size={14} /> : <Copy size={13} />}
-                </motion.span>
-              </AnimatePresence>
-            </span>
-          </motion.button>
+          <>
+            <motion.button
+              className={`file-code ${copied ? 'copied' : ''} ${copyError ? 'copy-error' : ''}`}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                void copy();
+              }}
+              aria-label={`Copy code ${file.code}`}
+              title={
+                copyError
+                  ? 'Select the code to copy'
+                  : copied
+                    ? 'Copied'
+                    : 'Copy code'
+              }
+            >
+              <span className="code-value">{file.code}</span>
+              <span className="code-symbol" aria-hidden="true">
+                <AnimatePresence initial={false} mode="popLayout">
+                  <motion.span
+                    key={copied ? 'copied' : 'copy'}
+                    initial={{ opacity: 0, scale: 0.75 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.75 }}
+                    transition={{ duration: 0.16 }}
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={13} />}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+            </motion.button>
+            <motion.button
+              className="row-action"
+              whileTap={{ scale: 0.93 }}
+              aria-label={`Edit code for ${file.name}`}
+              title="Edit code"
+              onClick={() => editCode(file)}
+            >
+              <Pencil size={14} strokeWidth={1.7} />
+            </motion.button>
+          </>
         ) : undefined
       }
       actions={

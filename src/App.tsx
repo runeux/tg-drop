@@ -17,6 +17,9 @@ const Uploads = lazy(() => import('./Uploads'));
 type Screen = 'loading' | 'entry' | 'upload';
 
 export function App() {
+  const [sharePath, setSharePath] = useState(() =>
+    window.location.pathname.slice(1),
+  );
   const [screen, setScreen] = useState<Screen>('loading');
   const [authenticated, setAuthenticated] = useState(false);
   const [maxFileBytes, setMaxFileBytes] = useState(4_000_000_000);
@@ -30,6 +33,11 @@ export function App() {
   const dragDepth = useRef(0);
   const uploadStage = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
+  const clearSharePath = useCallback(() => {
+    if (window.location.pathname === '/') return;
+    window.history.replaceState(null, '', '/');
+    setSharePath('');
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,7 +45,11 @@ export function App() {
       .then((session) => {
         if (controller.signal.aborted) return;
         setAuthenticated(session.authenticated);
-        setScreen(session.authenticated ? 'upload' : 'entry');
+        setScreen(
+          session.authenticated && window.location.pathname === '/'
+            ? 'upload'
+            : 'entry',
+        );
         setMaxFileBytes(session.maxFileBytes);
       })
       .catch(() => {
@@ -178,6 +190,8 @@ export function App() {
                 }}
               >
                 <EntryForm
+                  sharePath={sharePath}
+                  clearSharePath={clearSharePath}
                   onPassword={() => {
                     setAuthenticated(true);
                     setScreen('upload');

@@ -191,6 +191,15 @@ test('gallery partitions media, preserves proportions and opens a responsive ful
     const download = page.waitForEvent('download');
     await wide.getByRole('link', { name: 'Download wide.svg' }).click();
     expect((await download).suggestedFilename()).toBe('wide.svg');
+    await wide.getByRole('button', { name: 'Edit code for wide.svg' }).click();
+    const editor = page.getByRole('dialog', { name: 'edit code' });
+    await editor
+      .getByRole('textbox', { name: 'Custom code' })
+      .fill('wide.preview');
+    await editor.getByRole('button', { name: 'Save code' }).click();
+    await expect(
+      wide.getByRole('button', { name: 'Copy code WIDE.PREVIEW' }),
+    ).toBeVisible();
     await wide
       .getByRole('button', { name: 'Open wide.svg' })
       .click({ position: { x: 20, y: 20 } });

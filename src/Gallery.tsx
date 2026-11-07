@@ -21,9 +21,11 @@ type Dimensions = { width: number; height: number };
 export default function Gallery({
   files,
   remove,
+  editCode,
 }: {
   files: DropFile[];
   remove: (id: string) => Promise<void>;
+  editCode: (file: DropFile) => void;
 }) {
   const [dimensions, setDimensions] = useState<Record<string, Dimensions>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function Gallery({
               key={photo.key}
               file={photo.file}
               open={() => setSelected(photo.file.id)}
+              editCode={editCode}
               measure={
                 photo.file.width && photo.file.height ? undefined : measure
               }
@@ -79,6 +82,7 @@ export default function Gallery({
             file={selectedFile}
             close={() => setSelected(null)}
             remove={() => remove(selectedFile.id)}
+            editCode={editCode}
           />
         </Suspense>
       )}
@@ -89,12 +93,14 @@ export default function Gallery({
 function GalleryCard({
   file,
   open,
+  editCode,
   measure,
   width,
   height,
 }: {
   file: DropFile;
   open: () => void;
+  editCode: (file: DropFile) => void;
   width: number;
   height: number;
   measure?: (id: string, width: number, height: number) => void;
@@ -179,7 +185,7 @@ function GalleryCard({
           </span>
         )}
       </button>
-      <GalleryActions file={file} />
+      <GalleryActions file={file} editCode={editCode} />
     </article>
   );
 }

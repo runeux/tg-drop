@@ -248,6 +248,26 @@ export default function Uploads({
     }
   }
 
+  async function changeCode(id: string, value: string) {
+    const { code } = await api(
+      `/files/${id}/code`,
+      z.object({ code: z.string() }),
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ code: value }),
+      },
+    );
+    mutationVersion.current++;
+    setFiles((current) =>
+      current.map((entry) =>
+        entry.file.id === id
+          ? { ...entry, file: { ...entry.file, code } }
+          : entry,
+      ),
+    );
+    void refresh();
+  }
+
   async function retry(id: string) {
     setError('');
     try {
@@ -367,6 +387,7 @@ export default function Uploads({
       <Library
         loaded={loaded}
         remove={remove}
+        changeCode={changeCode}
         entries={listedFiles.map(({ file, local }) => ({
           file,
           local: Boolean(local),

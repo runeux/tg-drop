@@ -38,6 +38,7 @@ export interface TelegramSyncPort {
     id: number,
   ): Promise<{ width: number; height: number } | undefined>;
   history(): AsyncIterable<SavedDocument>;
+  read(id: number): Promise<SavedDocument | null>;
   subscribe(listener: (file: SavedDocument) => void): () => void;
   edit(id: number, caption: TextWithEntities): Promise<void>;
 }
@@ -45,6 +46,7 @@ export interface TelegramSyncPort {
 export function captionWithCode(
   caption: TextWithEntities,
   code: string,
+  previousCode?: string,
 ): TextWithEntities {
   const existing = caption.entities?.some(
     (entity) =>
@@ -58,9 +60,10 @@ export function captionWithCode(
       entity.offset + entity.length === caption.text.length &&
       (entity.offset === 0 ||
         caption.text.slice(0, entity.offset).endsWith('\n\n')) &&
-      /^[2-9A-HJ-NP-Z]{4}(?:-[2-9A-HJ-NP-Z]{4}){2,3}$/.test(
-        caption.text.slice(entity.offset),
-      ),
+      (caption.text.slice(entity.offset) === previousCode ||
+        /^[2-9A-HJ-NP-Z]{4}(?:-[2-9A-HJ-NP-Z]{4}){2,3}$/.test(
+          caption.text.slice(entity.offset),
+        )),
   );
   if (previous) {
     const delta = code.length - previous.length;
@@ -136,6 +139,10 @@ export function telegramSyncPort(
     };
   };
   return {
+    async read(id) {
+      const [message] = await client.getMessages(TELEGRAM_CHAT_ID, id);
+      return message ? normalize(message) : null;
+    },
     async dimensions(id) {
       const [message] = await client.getMessages(TELEGRAM_CHAT_ID, id);
       if (!(message?.media instanceof RawDocument)) return undefined;
@@ -193,6 +200,15 @@ export class TelegramSync {
     private port: TelegramSyncPort,
     private db: FileDatabase,
   ) {}
+
+  async updateCode(id: number, previous: string, code: string) {
+    await this.queue.add(async () => {
+      const file = await this.port.read(id);
+      if (!file || file.editable === false) return;
+      const caption = captionWithCode(file.caption, code, previous);
+      if (caption !== file.caption) await this.port.edit(id, caption);
+    });
+  }
 
   start() {
     this.running = true;
