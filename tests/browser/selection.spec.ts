@@ -80,7 +80,7 @@ test('a dropped folder becomes a ZIP with its nested files intact', async ({
   const upload = await request;
   expect(upload.headers()['x-file-name']).toBe('bundle.zip');
   const row = page.getByRole('listitem').filter({ hasText: 'bundle.zip' });
-  await expect(row.locator('.code-value')).toBeVisible();
+  await expect(row.getByRole('link', { name: /^Download / })).toBeVisible();
   const url = await row.locator('a[download]').getAttribute('href');
   if (!url) throw new Error('missing download url');
   const response = await page.request.get(url);
@@ -102,7 +102,7 @@ test('a dropped folder becomes a ZIP with its nested files intact', async ({
   } finally {
     await zip.close();
   }
-  await expect(row.locator('.code-value')).toBeVisible();
+  await expect(row.getByRole('link', { name: /^Download / })).toBeVisible();
 });
 
 test('invalid selections never reach the upload endpoint', async ({ page }) => {

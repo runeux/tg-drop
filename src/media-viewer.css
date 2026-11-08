@@ -207,6 +207,9 @@
   align-items: center;
   gap: 8px;
 }
+.viewer-toolbar .peek-close {
+  order: 1;
+}
 .viewer-title {
   display: flex;
   flex-direction: column;
@@ -241,33 +244,67 @@
   );
   object-fit: contain;
 }
+.viewer-action.viewer-mobile-menu,
+.viewer-title .viewer-code,
+.peek-close-back {
+  display: none;
+}
+
 @media (max-width: 600px) {
   .file-peek {
     grid-template-columns: minmax(64px, 0.58fr) minmax(0, 1fr);
   }
   .viewer-toolbar {
     top: max(12px, env(safe-area-inset-top));
-    left: 12px;
-    right: 12px;
-    gap: 4px;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+  .viewer-toolbar .peek-close {
+    order: 0;
+  }
+  .viewer-toolbar .viewer-action {
+    width: 44px;
+    height: 44px;
   }
   .viewer-title {
-    position: absolute;
-    top: 56px;
-    left: 4px;
-    right: 4px;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 6px 12px;
+    justify-content: center;
+    justify-self: center;
+    gap: 2px;
+    border: 1px solid #ffffff20;
+    border-radius: 14px;
+    background: #242424e8;
+    text-align: center;
   }
-  .viewer-toolbar > .viewer-actions {
-    margin-right: auto;
+  .viewer-title .viewer-size,
+  .viewer-toolbar .peek-close-x,
+  .viewer-toolbar .viewer-actions-desktop {
+    display: none;
+  }
+  .viewer-title .viewer-code {
+    display: block;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .viewer-toolbar .peek-close-back {
+    display: block;
+  }
+  .viewer-action.viewer-mobile-menu {
+    display: inline-flex;
   }
   .viewer-stage {
-    padding-top: max(112px, calc(env(safe-area-inset-top) + 108px));
+    padding: 0;
   }
   .viewer-media {
     width: 100vw;
-    max-height: calc(
-      100dvh - max(112px, calc(env(safe-area-inset-top) + 108px)) -
-        max(24px, env(safe-area-inset-bottom))
-    );
+    max-height: 100dvh;
   }
 }

@@ -40,8 +40,16 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       buffer: Buffer.alloc(2_400_000, 'x'),
     });
     const row = page.getByRole('listitem').filter({ hasText: name });
-    await expect(row.locator('.code-value')).toBeVisible();
-    const code = await row.locator('.code-value').innerText();
+    await expect(
+      row.getByRole('link', { name: `Download ${name}` }),
+    ).toBeVisible();
+    const response = await page.request.get('/api/files');
+    const { files } = filesResponseSchema.parse(await response.json());
+    const file = files.find(
+      (item) => item.name === name && item.status === 'ready',
+    );
+    if (!file) throw new Error(`missing ready file: ${name}`);
+    const { code } = file;
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     const input = page.getByLabel('Code', { exact: true });
     await input.fill(code);

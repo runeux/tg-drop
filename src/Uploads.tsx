@@ -10,7 +10,11 @@ import XHRUpload from '@uppy/xhr-upload';
 import { ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { z } from 'zod';
-import { filesResponseSchema, type DropFile } from '../shared/files';
+import {
+  filesResponseSchema,
+  formatSize,
+  type DropFile,
+} from '../shared/files';
 import { api, ApiError, message, okSchema } from './api';
 import { Library } from './Library';
 import { validateFile } from './selection';
@@ -343,6 +347,10 @@ export default function Uploads({
     (left, right) =>
       right.order - left.order || left.file.id.localeCompare(right.file.id),
   );
+  const totalBytes = listedFiles.reduce(
+    (total, { file }) => total + file.size,
+    0,
+  );
 
   return (
     <section className="uploads" aria-label="Uploads">
@@ -358,17 +366,25 @@ export default function Uploads({
           event.target.value = '';
         }}
       />
-      <motion.button
-        className="dropzone"
-        whileTap={{ scale: 0.99 }}
-        onClick={() => input.current?.click()}
-      >
-        <span className="dropzone-icon">
-          <ArrowUpFromLine size={33} strokeWidth={1.4} />
-        </span>
-        <span>drop files here</span>
-        <small>or click to browse</small>
-      </motion.button>
+      <header className="upload-header">
+        <div>
+          <h1>files</h1>
+          <p>
+            {listedFiles.length} {listedFiles.length === 1 ? 'file' : 'files'}
+            {' ・ '}
+            {formatSize(totalBytes)}
+          </p>
+        </div>
+        <motion.button
+          type="button"
+          className="upload-button"
+          whileTap={{ scale: 0.96 }}
+          onClick={() => input.current?.click()}
+        >
+          <ArrowUpFromLine size={16} aria-hidden="true" />
+          upload
+        </motion.button>
+      </header>
       {(error || connectionError) && (
         <p className="workspace-error" role="alert">
           {error || connectionError}

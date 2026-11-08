@@ -10,13 +10,13 @@
   <img src="docs/home.png" alt="drop — code or password" width="960" />
 </p>
 
-enter a code to find a file or use the sign-in icon to unlock uploads. drop anywhere. open a row to peek at the file or use its download and copy actions.
+enter a code to find a file or use the sign-in icon to unlock uploads. drop anywhere. open a row to peek at the file or use its download and actions buttons.
 
 password protected uploads · telegram storage · private channel sync · manual removal
 
 photos, videos, and documents sent to the storage channel are imported automatically, including existing history. each album item gets its own code. photos download as telegram's available jpeg version; original document and video filenames are preserved when available.
 
-the dashboard lists all uploads together. images and videos open a fullscreen viewer, while files without a media preview show their details and an icon from [material icon theme](https://github.com/material-extensions/vscode-material-icon-theme).
+the dashboard lists all uploads together. images and videos open a fullscreen viewer, while files without a media preview show their details and an icon from [pretty-file-icons 2.2.1](https://github.com/kravets-levko/pretty-file-icons). the zip icon uses a darker zipper for contrast.
 
 ### run
 

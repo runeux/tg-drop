@@ -127,7 +127,7 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
     ).toBeVisible();
     await expect(unknown.locator('.file-type-icon')).toHaveAttribute(
       'src',
-      '/assets/file-icons/document.svg',
+      '/assets/file-icons-v2/unknown.svg',
     );
     await expect(unknown.locator('.file-type-icon')).toHaveCSS(
       'height',
@@ -163,7 +163,7 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
     await expect(unavailable).toHaveAttribute('data-status', 'failed');
     await expect(unavailable.locator('.file-type-icon')).toHaveAttribute(
       'src',
-      '/assets/file-icons/image.svg',
+      '/assets/file-icons-v2/svg.svg',
     );
     await unavailable.click();
     const fallback = page.getByRole('dialog', { name: 'Preview portrait.svg' });
@@ -185,6 +185,27 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
           (info.project.name === 'desktop' ? 0.8 : 1),
         0,
       );
+    const mobile = info.project.name === 'iphone';
+    const mobileActions = viewer.getByRole('button', {
+      name: 'Actions for wide.svg',
+    });
+    const mobileItem = (name: string) =>
+      viewer.getByRole('menuitem', { name, exact: true });
+    if (mobile) {
+      await expect(viewer.locator('.viewer-code')).toHaveText(
+        /^[2-9A-HJ-NP-Z-]{19}$/,
+      );
+      await expect(viewer.locator('.peek-close-back')).toBeVisible();
+      await expect(viewer.locator('.viewer-stage')).toHaveCSS(
+        'padding-top',
+        '0px',
+      );
+      await mobileActions.tap();
+      await expect(mobileItem('share link')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(viewer.getByRole('menu')).toHaveCount(0);
+      await expect(viewer).toBeVisible();
+    }
     if (browserName === 'chromium') {
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await viewer.getByRole('button', { name: /Copy code/ }).click();
@@ -193,19 +214,33 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
       );
     }
     const download = page.waitForEvent('download');
-    await viewer.getByRole('link', { name: 'Download wide.svg' }).click();
+    if (mobile) {
+      await mobileActions.tap();
+      await mobileItem('download').tap();
+    } else {
+      await viewer.getByRole('link', { name: 'Download wide.svg' }).click();
+    }
     expect((await download).suggestedFilename()).toBe('wide.svg');
-    await viewer
-      .getByRole('button', { name: 'Edit code for wide.svg' })
-      .click();
+    if (mobile) {
+      await mobileActions.tap();
+      await mobileItem('edit code').tap();
+    } else {
+      await viewer
+        .getByRole('button', { name: 'Edit code for wide.svg' })
+        .click();
+    }
     const editor = page.getByRole('dialog', { name: 'edit code' });
     await editor
       .getByRole('textbox', { name: 'Custom code' })
       .fill('wide.preview');
     await editor.getByRole('button', { name: 'Save code' }).click();
-    await expect(
-      viewer.getByRole('button', { name: 'Copy code WIDE.PREVIEW' }),
-    ).toBeVisible();
+    if (mobile) {
+      await expect(viewer.locator('.viewer-code')).toHaveText('WIDE.PREVIEW');
+    } else {
+      await expect(
+        viewer.getByRole('button', { name: 'Copy code WIDE.PREVIEW' }),
+      ).toBeVisible();
+    }
 
     if (info.project.name === 'desktop') await page.keyboard.press('Escape');
     else await viewer.getByRole('button', { name: 'Close preview' }).click();
@@ -238,12 +273,18 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
       'transform',
       'none',
     );
-    await viewer
-      .getByRole('button', { name: 'Delete wide.svg', exact: true })
-      .click();
-    await viewer
-      .getByRole('button', { name: 'Confirm delete wide.svg', exact: true })
-      .click();
+    if (mobile) {
+      await mobileActions.tap();
+      await mobileItem('delete file').tap();
+      await mobileItem('confirm delete').tap();
+    } else {
+      await viewer
+        .getByRole('button', { name: 'Delete wide.svg', exact: true })
+        .click();
+      await viewer
+        .getByRole('button', { name: 'Confirm delete wide.svg', exact: true })
+        .click();
+    }
     await expect(viewer).toHaveCount(0);
     await expect(wide).toHaveCount(0);
   } finally {

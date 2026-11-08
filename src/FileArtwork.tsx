@@ -5,27 +5,44 @@ import { mediaKind } from '../shared/media';
 import { extensionOf } from './file-extension';
 import './file-artwork.css';
 
+const exactIcons = new Set([
+  '7z',
+  'ai',
+  'avi',
+  'css',
+  'csv',
+  'doc',
+  'exe',
+  'flac',
+  'gif',
+  'html',
+  'iso',
+  'jpg',
+  'js',
+  'json',
+  'mp3',
+  'mp4',
+  'pdf',
+  'png',
+  'ppt',
+  'psd',
+  'rar',
+  'rtf',
+  'svg',
+  'wav',
+  'xls',
+  'xml',
+  'zip',
+]);
 const iconGroups = {
-  pdf: ['pdf'],
-  zip: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'zst'],
-  audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'aiff'],
-  image: [
-    'jpg',
-    'jpeg',
-    'png',
-    'gif',
-    'webp',
-    'svg',
-    'heic',
-    'avif',
-    'bmp',
-    'tiff',
-  ],
-  video: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'mpeg'],
-  table: ['csv', 'tsv', 'xls', 'xlsx', 'ods'],
-  powerpoint: ['ppt', 'pptx', 'odp', 'key'],
-  word: ['doc', 'docx', 'odt', 'rtf', 'pages'],
-  settings: ['ini', 'conf', 'cfg', 'toml', 'yaml', 'yml', 'json', 'xml'],
+  archive: ['tar', 'gz', 'bz2', 'xz', 'zst', 'tgz'],
+  audio: ['m4a', 'aac', 'ogg', 'opus', 'aiff'],
+  jpg: ['jpeg', 'webp', 'heic', 'avif', 'bmp', 'tiff'],
+  video: ['mov', 'mkv', 'webm', 'm4v', 'mpeg'],
+  xls: ['tsv', 'xlsx', 'ods'],
+  ppt: ['pptx', 'odp', 'key'],
+  doc: ['docx', 'odt', 'pages'],
+  text: ['txt', 'md', 'ini', 'conf', 'cfg', 'toml', 'yaml', 'yml', 'log'],
 };
 const iconsByExtension = new Map(
   Object.entries(iconGroups).flatMap(([icon, extensions]) =>
@@ -47,13 +64,17 @@ export function FileArtwork({ file }: { file: DropFile }) {
 }
 
 export function FileTypeIcon({ file }: { file: DropFile }) {
+  const extension = extensionOf(file.name);
   const kind = mediaKind(file);
-  const icon =
-    kind ?? iconsByExtension.get(extensionOf(file.name)) ?? 'document';
+  const icon = exactIcons.has(extension)
+    ? extension
+    : (iconsByExtension.get(extension) ??
+      (kind === 'image' ? 'jpg' : kind) ??
+      'unknown');
   return (
     <img
       className="file-type-icon"
-      src={`/assets/file-icons/${icon}.svg`}
+      src={`/assets/file-icons-v2/${icon}.svg`}
       alt=""
     />
   );

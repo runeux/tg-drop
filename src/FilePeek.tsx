@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Check, Share, X } from 'lucide-react';
+import { ArrowLeft, Check, Share, X } from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
 import { mediaKind } from '../shared/media';
 import { FileTypeIcon } from './FileArtwork';
 import type { PreviewSource } from './FileRow';
 import { MediaViewerActions } from './MediaViewerActions';
+import { shareUrl } from './share-url';
 import { usePeekDialog } from './use-peek-dialog';
 import './media-viewer.css';
 
@@ -48,12 +49,8 @@ export function FilePeek({
   const dateLabel = `added ${addedDate.format(date)}`;
 
   async function copyShareLink() {
-    const url = new URL(
-      `/${encodeURIComponent(file.code)}`,
-      window.location.origin,
-    );
     try {
-      await navigator.clipboard.writeText(url.href);
+      await navigator.clipboard.writeText(shareUrl(file.code));
       setSharedCode(file.code);
       setShareError(false);
     } catch {
@@ -66,6 +63,7 @@ export function FilePeek({
       editCode={editCode}
       remove={remove}
       close={dismiss}
+      mobileMenu={showMedia}
     />
   );
   const closeButton = (
@@ -76,7 +74,10 @@ export function FilePeek({
       title="Close"
       onClick={dismiss}
     >
-      <X size={20} aria-hidden="true" />
+      <X className="peek-close-x" size={20} aria-hidden="true" />
+      {showMedia && (
+        <ArrowLeft className="peek-close-back" size={19} aria-hidden="true" />
+      )}
     </button>
   );
 
@@ -105,12 +106,13 @@ export function FilePeek({
         {showMedia ? (
           <>
             <header className="viewer-toolbar">
+              {closeButton}
               <div className="viewer-title">
                 <span>{file.name}</span>
-                <small>{formatSize(file.size)}</small>
+                <small className="viewer-size">{formatSize(file.size)}</small>
+                <small className="viewer-code">{file.code}</small>
               </div>
               {actions}
-              {closeButton}
             </header>
             <div
               className="viewer-stage"

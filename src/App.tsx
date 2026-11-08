@@ -16,6 +16,10 @@ const Uploads = lazy(() => import('./Uploads'));
 
 type Screen = 'loading' | 'entry' | 'upload';
 
+function showDragOverlay(element: HTMLDivElement | null) {
+  element?.showPopover?.();
+}
+
 export function App() {
   const [sharePath, setSharePath] = useState(() =>
     window.location.pathname.slice(1),
@@ -62,6 +66,12 @@ export function App() {
     if (screen === 'upload')
       uploadStage.current?.focus({ preventScroll: true });
   }, [screen]);
+
+  useEffect(() => {
+    const suppress = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener('contextmenu', suppress);
+    return () => window.removeEventListener('contextmenu', suppress);
+  }, []);
 
   const acceptFiles = useCallback(
     (files: File[]) => {
@@ -268,20 +278,17 @@ export function App() {
       <AnimatePresence>
         {dragging && (
           <motion.div
+            ref={showDragOverlay}
             className="drag-overlay"
+            popover="manual"
+            role="status"
+            aria-label="Drop to upload"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.16 }}
           >
-            <motion.div
-              className="drag-prompt"
-              initial={{ scale: 0.96 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.96 }}
-            >
-              <ArrowUpFromLine size={44} strokeWidth={1.4} />
-              <span>drop to upload</span>
-            </motion.div>
+            <ArrowUpFromLine size={38} strokeWidth={1.5} aria-hidden="true" />
           </motion.div>
         )}
       </AnimatePresence>

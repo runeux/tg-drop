@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, Pencil, Trash2 } from 'lucide-react';
 import type { DropFile } from '../shared/files';
+import { FileActionMenu } from './FileActionMenu';
 
 export function MediaViewerActions({
   file,
   editCode,
   remove,
   close,
+  mobileMenu,
 }: {
   file: DropFile;
   editCode: (file: DropFile) => void;
   remove: () => Promise<void>;
   close: () => void;
+  mobileMenu: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -32,57 +35,83 @@ export function MediaViewerActions({
     }
   }
 
+  function requestRemoval() {
+    if (!confirm) {
+      setConfirm(true);
+      return false;
+    }
+    setBusy(true);
+    void remove()
+      .then(close)
+      .finally(() => setBusy(false));
+    return true;
+  }
+
+  const downloadUrl = `/api/files/${file.id}/download`;
+
   return (
-    <div className="viewer-actions">
-      <a
-        className="viewer-action"
-        href={`/api/files/${file.id}/download`}
-        download
-        aria-label={`Download ${file.name}`}
-        title="Download"
+    <>
+      <div
+        className={`viewer-actions${mobileMenu ? ' viewer-actions-desktop' : ''}`}
       >
-        <Download size={18} strokeWidth={1.7} />
-      </a>
-      <button
-        className="viewer-action"
-        onClick={() => void copy()}
-        aria-label={`Copy code ${file.code}`}
-        title={copied ? 'Copied' : 'Copy code'}
-      >
-        {copied ? <Check size={18} /> : <Copy size={17} strokeWidth={1.7} />}
-      </button>
-      <button
-        className="viewer-action"
-        onClick={() => editCode(file)}
-        aria-label={`Edit code for ${file.name}`}
-        title="Edit code"
-      >
-        <Pencil size={17} strokeWidth={1.7} />
-      </button>
-      <button
-        className="viewer-action"
-        disabled={busy}
-        aria-label={`${confirm ? 'Confirm delete' : 'Delete'} ${file.name}`}
-        title={confirm ? 'Confirm removal' : 'Remove file'}
-        onClick={() => {
-          if (!confirm) {
-            setConfirm(true);
-            return;
-          }
-          setBusy(true);
-          void remove()
-            .then(close)
-            .finally(() => setBusy(false));
-        }}
-      >
-        {confirm ? <Check size={18} /> : <Trash2 size={18} />}
-      </button>
-      <span
-        className={failed ? 'viewer-copy-error' : 'visually-hidden'}
-        role="status"
-      >
-        {failed ? `Copy this code: ${file.code}` : copied ? 'Code copied' : ''}
-      </span>
-    </div>
+        <a
+          className="viewer-action"
+          href={downloadUrl}
+          download
+          aria-label={`Download ${file.name}`}
+          title="Download"
+        >
+          <Download size={18} strokeWidth={1.7} />
+        </a>
+        <button
+          className="viewer-action"
+          onClick={() => void copy()}
+          aria-label={`Copy code ${file.code}`}
+          title={copied ? 'Copied' : 'Copy code'}
+        >
+          {copied ? <Check size={18} /> : <Copy size={17} strokeWidth={1.7} />}
+        </button>
+        <button
+          className="viewer-action"
+          onClick={() => editCode(file)}
+          aria-label={`Edit code for ${file.name}`}
+          title="Edit code"
+        >
+          <Pencil size={17} strokeWidth={1.7} />
+        </button>
+        <button
+          className="viewer-action"
+          disabled={busy}
+          aria-label={`${confirm ? 'Confirm delete' : 'Delete'} ${file.name}`}
+          title={confirm ? 'Confirm removal' : 'Remove file'}
+          onClick={requestRemoval}
+        >
+          {confirm ? <Check size={18} /> : <Trash2 size={18} />}
+        </button>
+        <span
+          className={failed ? 'viewer-copy-error' : 'visually-hidden'}
+          role="status"
+        >
+          {failed
+            ? `Copy this code: ${file.code}`
+            : copied
+              ? 'Code copied'
+              : ''}
+        </span>
+      </div>
+      {mobileMenu && (
+        <FileActionMenu
+          name={file.name}
+          code={file.code}
+          downloadUrl={downloadUrl}
+          busy={busy}
+          confirmDelete={confirm}
+          edit={() => editCode(file)}
+          remove={requestRemoval}
+          resetConfirmation={() => setConfirm(false)}
+          className="viewer-action viewer-mobile-menu"
+        />
+      )}
+    </>
   );
 }

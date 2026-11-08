@@ -23,6 +23,7 @@
     "@hono/node-server": "^2.1.6",
     "@mtcute/node": "^0.32.7",
     "@radix-ui/react-dropdown-menu": "^2.2.1",
+    "@radix-ui/react-menu": "^2.2.1",
     "@uppy/core": "^6.3.1",
     "@uppy/xhr-upload": "^6.0.1",
     "@zip.js/zip.js": "^2.24.0",

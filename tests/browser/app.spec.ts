@@ -29,7 +29,7 @@ async function unlock(page: Page) {
   await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(
-    page.getByRole('button', { name: /drop files here/ }),
+    page.getByRole('button', { name: 'upload', exact: true }),
   ).toBeVisible();
 }
 
@@ -50,20 +50,28 @@ const mobileLayout = () => test.info().project.name === 'iphone';
 const fileActions = (row: Locator) =>
   row.getByRole('button', { name: /^Actions for / });
 
+const readyDownload = (row: Locator) =>
+  row.getByRole('link', { name: /^Download / });
+
+async function codeFor(page: Page, name: string) {
+  const response = await page.request.get('/api/files');
+  const { files } = filesResponseSchema.parse(await response.json());
+  const file = files.find(
+    (item) => item.name === name && item.status === 'ready',
+  );
+  if (!file) throw new Error(`missing ready file: ${name}`);
+  return file.code;
+}
+
 async function deleteFile(page: Page, row: Locator) {
-  if (mobileLayout()) {
-    await fileActions(row).tap();
-    await page
-      .getByRole('menuitem', { name: 'delete file', exact: true })
-      .tap();
-    await expect(row).toBeVisible();
-    await page
-      .getByRole('menuitem', { name: 'confirm delete', exact: true })
-      .tap();
-  } else {
-    await row.getByRole('button', { name: /^Delete / }).click();
-    await row.getByRole('button', { name: /^Confirm delete / }).click();
-  }
+  await fileActions(row).click();
+  await page
+    .getByRole('menuitem', { name: 'delete file', exact: true })
+    .click();
+  await expect(row).toBeVisible();
+  await page
+    .getByRole('menuitem', { name: 'confirm delete', exact: true })
+    .click();
 }
 
 test('password gate, automatic upload, copy code and repeatable manual downloads', async ({
@@ -107,43 +115,27 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
   await password.fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   const name = `notes-${test.info().project.name}.txt`;
-  await page.getByLabel('Choose files').setInputFiles({
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'upload', exact: true }).click();
+  await (
+    await chooser
+  ).setFiles({
     name,
     mimeType: 'text/plain',
     buffer: Buffer.from('hello from browser'),
   });
   const row = page.getByRole('listitem').filter({ hasText: name });
-  const copy = row.getByRole('button', { name: /Copy code/ });
-  const edit = row.getByRole('button', { name: `Edit code for ${name}` });
-  const remove = row.getByRole('button', { name: `Delete ${name}` });
-  const code = await row.locator('.file-meta .code-value').innerText();
+  await expect(readyDownload(row)).toBeVisible();
+  const code = await codeFor(page, name);
   expect(code.replaceAll('-', '')).toHaveLength(16);
+  await expect(row.locator('.code-value')).toHaveCount(0);
+  const trigger = fileActions(row);
+  await expect(row.locator('.file-actions').locator('a, button')).toHaveCount(
+    2,
+  );
   if (mobileLayout()) {
-    const trigger = fileActions(row);
-    await expect(row.getByRole('button')).toHaveCount(2);
     await expect(trigger).toHaveCSS('width', '44px');
-    await expect(trigger).toHaveCSS('height', '44px');
-  } else {
-    await expect(fileActions(row)).toBeHidden();
-    await expect(copy).toHaveAccessibleName(`Copy code ${code}`);
-    await expect(copy).not.toContainText(code);
-    await expect(remove).toHaveCSS('opacity', '1');
-    await expect(row).toHaveCSS('opacity', '1');
-    const [downloadBox, copyBox, editBox, removeBox] = await Promise.all(
-      [
-        row.getByRole('link', { name: `Download ${name}` }),
-        copy,
-        edit,
-        remove,
-      ].map((action) => action.boundingBox()),
-    );
-    if (!downloadBox || !copyBox || !editBox || !removeBox)
-      throw new Error('missing file actions');
-    expect(copyBox.y).toBeCloseTo(downloadBox.y);
-    expect(copyBox.x - downloadBox.x).toBeCloseTo(editBox.x - copyBox.x);
-    expect(editBox.y).toBeCloseTo(copyBox.y);
-    expect(removeBox.y).toBeCloseTo(editBox.y);
-    expect(editBox.x - copyBox.x).toBeCloseTo(removeBox.x - editBox.x);
+    await expect(readyDownload(row)).toHaveCSS('height', '44px');
   }
   const filename = row.getByRole('button', {
     name: `Open preview for ${name}`,
@@ -187,26 +179,38 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
   await expect(filename).toHaveCSS('outline-style', 'none');
 
   const nameDownload = page.waitForEvent('download');
-  if (mobileLayout()) {
-    await fileActions(row).tap();
-    await expect(page.getByRole('menuitem').first()).toHaveText('download');
-    await page.getByRole('menuitem', { name: 'download', exact: true }).tap();
-  } else {
-    await row.getByRole('link', { name: `Download ${name}` }).click();
-  }
+  await readyDownload(row).click();
   expect(await (await nameDownload).failure()).toBeNull();
   expect(downloads).toEqual([name]);
   await expect(peek).toHaveCount(0);
   if (browserName === 'chromium') {
-    if (mobileLayout()) {
-      await fileActions(row).tap();
-      await page
-        .getByRole('menuitem', { name: 'copy code', exact: true })
-        .tap();
-      await expect(page.getByRole('menu')).toBeHidden();
-    } else {
-      await copy.click();
-    }
+    const position = { x: 70, y: 18 };
+    const bounds = await row.boundingBox();
+    if (!bounds) throw new Error('missing file row');
+    await row.click({ button: 'right', position });
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem')).toHaveText([
+      'share link',
+      'copy code',
+      'edit code',
+      'delete file',
+    ]);
+    await expect(menu).toHaveCSS('opacity', '1');
+    const popup = await menu.boundingBox();
+    expect(popup?.x).toBeCloseTo(bounds.x + position.x, 0);
+    expect(popup?.y).toBeCloseTo(bounds.y + position.y, 0);
+    await menu
+      .getByRole('menuitem', { name: 'share link', exact: true })
+      .click();
+    await expect(row.getByRole('status')).toHaveText('Link copied');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      new URL(`/${code}`, page.url()).href,
+    );
+    await fileActions(row).click();
+    await menu
+      .getByRole('menuitem', { name: 'copy code', exact: true })
+      .click();
+    await expect(row.getByRole('status')).toHaveText('Code copied');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       code,
     );
@@ -259,12 +263,49 @@ test('whole-page drop waits for password and files persist until manual removal'
   const pendingRow = page
     .getByRole('listitem')
     .filter({ hasText: `pending-${test.info().project.name}.txt` });
-  await expect(pendingRow.locator('.code-value')).toBeVisible();
+  await expect(readyDownload(pendingRow)).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'files', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.upload-header p')).toHaveText('1 file ・ 25 B');
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(['drag test'], 'drag-test.txt'));
+    return data;
+  });
+  const body = page.locator('body');
+  await body.dispatchEvent('dragenter', {
+    bubbles: true,
+    dataTransfer: transfer,
+  });
+  const overlay = page.getByRole('status', { name: 'Drop to upload' });
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveCSS('backdrop-filter', 'blur(6px)');
+  await expect(overlay).toHaveCSS('position', 'fixed');
+  const size = page.viewportSize();
+  expect(await overlay.boundingBox()).toEqual({
+    x: 0,
+    y: 0,
+    width: size?.width,
+    height: size?.height,
+  });
+  await body.dispatchEvent('dragleave', {
+    bubbles: true,
+    dataTransfer: transfer,
+  });
+  await expect(overlay).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      document.body.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+      ),
+    ),
+  ).toBe(false);
   await dropFile(page, `persistent-${test.info().project.name}.txt`);
   const persistentRow = page
     .getByRole('listitem')
     .filter({ hasText: `persistent-${test.info().project.name}.txt` });
-  await expect(persistentRow.locator('.code-value')).toBeVisible();
+  await expect(readyDownload(persistentRow)).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await unlock(page);
   await expect(persistentRow).toBeVisible();
@@ -288,10 +329,10 @@ test('dashboard code edits replace the old code and share links wait for a click
   await dropFile(page, 'other.txt');
   const row = page.getByRole('listitem').filter({ hasText: 'vpn.txt' });
   const otherRow = page.getByRole('listitem').filter({ hasText: 'other.txt' });
-  await expect(row.locator('.code-value')).toBeVisible();
-  await expect(otherRow.locator('.code-value')).toBeVisible();
-  const original = await row.locator('.code-value').innerText();
-  const taken = await otherRow.locator('.code-value').innerText();
+  await expect(readyDownload(row)).toBeVisible();
+  await expect(readyDownload(otherRow)).toBeVisible();
+  const original = await codeFor(page, 'vpn.txt');
+  const taken = await codeFor(page, 'other.txt');
   const lookup = (code: string) =>
     page.request.post('/api/lookup', {
       headers: { Origin: origin },
@@ -301,15 +342,9 @@ test('dashboard code edits replace the old code and share links wait for a click
   expect(before.ok()).toBe(true);
   const { url } = downloadSchema.parse(await before.json());
 
-  const edit = mobileLayout()
-    ? fileActions(row)
-    : row.getByRole('button', { name: 'Edit code for vpn.txt' });
-  if (mobileLayout()) {
-    await edit.tap();
-    await page.getByRole('menuitem', { name: 'edit code', exact: true }).tap();
-  } else {
-    await edit.click();
-  }
+  const edit = fileActions(row);
+  await edit.click();
+  await page.getByRole('menuitem', { name: 'edit code', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'edit code' });
   const input = dialog.getByRole('textbox', { name: 'Custom code' });
   await expect(input).toBeFocused();
@@ -402,7 +437,7 @@ test('keyboard navigation and reduced motion remain usable', async ({
   await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.keyboard.press('Enter');
   await expect(
-    page.getByRole('button', { name: /drop files here/ }),
+    page.getByRole('button', { name: 'upload', exact: true }),
   ).toBeVisible();
 });
 
@@ -441,13 +476,13 @@ test('library search combines filename, code and type filters', async ({
   const rows = page
     .getByRole('list', { name: 'Files', exact: true })
     .getByRole('listitem');
-  await expect(rows.locator('.code-value')).toHaveCount(5);
+  await expect(readyDownload(rows)).toHaveCount(5);
   const pdf = rows.filter({ hasText: 'schedule.pdf' });
   await expect(pdf.locator('.file-type-icon')).toHaveAttribute(
     'src',
-    '/assets/file-icons/pdf.svg',
+    '/assets/file-icons-v2/pdf.svg',
   );
-  const code = await pdf.locator('.code-value').innerText();
+  const code = await codeFor(page, 'schedule.pdf');
   await search.fill('FIELD-NOTES');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('field-notes.TXT');
@@ -513,7 +548,7 @@ test('screenshots', async ({ page }, info) => {
   ]);
   await expect(
     page.getByRole('button', {
-      name: mobileLayout() ? /^Actions for / : /Copy code/,
+      name: /^Actions for /,
     }),
   ).toHaveCount(3);
   await expect(
