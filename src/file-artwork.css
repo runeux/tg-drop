@@ -1,0 +1,47 @@
+.file-artwork {
+  position: relative;
+  display: grid;
+  place-items: center;
+  grid-column: 1;
+  grid-row: 1;
+  width: var(--file-artwork-size);
+  height: var(--file-artwork-size);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 9px;
+  background: transparent;
+}
+
+.file-type-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.file-preview[data-status='ready'] {
+  background: var(--bg-secondary);
+}
+
+.file-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+}
+
+.file-preview[data-status='ready'] .file-thumbnail {
+  opacity: 1;
+}
+
+.file-thumbnail-play {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: #0009;
+  color: #fff;
+}

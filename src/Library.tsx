@@ -1,13 +1,12 @@
-import { lazy, Suspense, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { LoaderCircle } from 'lucide-react';
-import { mediaKind } from '../shared/media';
+import { useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import type { DropFile } from '../shared/files';
-import { SavedFile, type SavedFileProps } from './FileRow';
+import { SavedFile, type PreviewSource, type SavedFileProps } from './FileRow';
 import { CodeEditor } from './CodeEditor';
+import { FilePeek } from './FilePeek';
+import { LibrarySearch } from './LibrarySearch';
+import { extensionOf } from './file-extension';
 import './library.css';
-
-const Gallery = lazy(() => import('./Gallery'));
 
 export function Library({
   entries,
@@ -20,107 +19,78 @@ export function Library({
   remove: (id: string) => Promise<void>;
   changeCode: (id: string, code: string) => Promise<void>;
 }) {
-  const [tab, setTab] = useState<'files' | 'gallery'>('files');
   const [editing, setEditing] = useState<DropFile | null>(null);
-  const reducedMotion = useReducedMotion();
-  const gallery = entries.filter(({ file }) => mediaKind(file));
-  const documents = entries.filter(({ file }) => !mediaKind(file));
-  const current = tab === 'files' ? documents : gallery;
-  const rows = current.filter(
-    ({ file }) => tab === 'files' || file.status !== 'ready',
+  const [selection, setSelection] = useState<{
+    id: string;
+    source: PreviewSource;
+  } | null>(null);
+  const [query, setQuery] = useState('');
+  const [excludedTypes, setExcludedTypes] = useState<ReadonlySet<string>>(
+    () => new Set(),
   );
 
+  const preview = entries.find(({ file }) => file.id === selection?.id)?.file;
+  const typeCounts = new Map<string, number>();
+  const filtered: SavedFileProps[] = [];
+  for (const entry of entries) {
+    const { file } = entry;
+    const extension = extensionOf(file.name);
+    typeCounts.set(extension, (typeCounts.get(extension) ?? 0) + 1);
+    if (
+      !excludedTypes.has(extension) &&
+      (file.name.toLowerCase().includes(query) ||
+        file.code.toLowerCase().includes(query))
+    ) {
+      filtered.push(entry);
+    }
+  }
+  const types = [...typeCounts].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  function toggleType(extension: string) {
+    setExcludedTypes((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(extension)) next.add(extension);
+      return next;
+    });
+  }
+
   return (
-    <div className="library" data-tab={tab}>
-      <div className="dashboard-tabs" role="tablist" aria-label="Library">
-        {(['files', 'gallery'] as const).map((name) => (
-          <button
-            key={name}
-            id={`tab-${name}`}
-            role="tab"
-            aria-selected={tab === name}
-            aria-controls={`panel-${name}`}
-            tabIndex={tab === name ? 0 : -1}
-            onClick={() => setTab(name)}
-            onKeyDown={(event) => {
-              if (
-                !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
-              )
-                return;
-              event.preventDefault();
-              const next =
-                event.key === 'Home'
-                  ? 'files'
-                  : event.key === 'End'
-                    ? 'gallery'
-                    : name === 'files'
-                      ? 'gallery'
-                      : 'files';
-              setTab(next);
-              document.getElementById(`tab-${next}`)?.focus();
-            }}
-          >
-            {tab === name && (
-              <motion.span
-                className="tab-indicator"
-                layoutId="dashboard-tab"
-                transition={
-                  reducedMotion
-                    ? { duration: 0 }
-                    : { type: 'spring', bounce: 0, duration: 0.3 }
-                }
-              />
-            )}
-            <span>{name}</span>
-            <small>
-              {name === 'files' ? documents.length : gallery.length}
-            </small>
-          </button>
-        ))}
-      </div>
-      <div
-        key={tab}
-        id={`panel-${tab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${tab}`}
-        aria-busy={!loaded}
-        tabIndex={0}
-      >
-        {tab === 'gallery' && (
-          <Suspense
-            fallback={
-              <div className="list-loading">
-                <LoaderCircle size={18} className="spinning" />
-              </div>
-            }
-          >
-            <Gallery
-              files={gallery
-                .filter(({ file }) => file.status === 'ready')
-                .map(({ file }) => file)}
-              remove={remove}
+    <div className="library">
+      <LibrarySearch
+        changeQuery={setQuery}
+        types={types}
+        excluded={excludedTypes}
+        toggleType={toggleType}
+        selectAll={() => setExcludedTypes(new Set())}
+      />
+      <ul className="file-list" aria-label="Files" aria-busy={!loaded}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {filtered.map((entry) => (
+            <SavedFile
+              key={entry.file.id}
+              {...entry}
               editCode={setEditing}
+              openPreview={(id, source) => setSelection({ id, source })}
             />
-          </Suspense>
-        )}
-        <ul
-          className="file-list"
-          aria-label={tab === 'files' ? 'Files' : 'Media uploads'}
-        >
-          <AnimatePresence initial={false} mode="popLayout">
-            {rows.map((entry) => (
-              <SavedFile key={entry.file.id} {...entry} editCode={setEditing} />
-            ))}
-          </AnimatePresence>
-        </ul>
-        {loaded && !current.length && (
-          <p className="library-empty">
-            {tab === 'gallery'
-              ? 'your images and videos will appear here'
-              : 'your files will appear here'}
-          </p>
-        )}
-      </div>
+          ))}
+        </AnimatePresence>
+      </ul>
+      {loaded && !filtered.length && (
+        <p className="library-empty">
+          {entries.length ? 'no matching files' : 'your files will appear here'}
+        </p>
+      )}
+      {preview && selection && (
+        <FilePeek
+          key={preview.id}
+          file={preview}
+          source={selection.source}
+          close={() => setSelection(null)}
+          remove={() => remove(preview.id)}
+          editCode={setEditing}
+        />
+      )}
       {editing && (
         <CodeEditor
           file={editing}

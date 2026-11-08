@@ -413,28 +413,33 @@ test('manual removal revokes codes immediately and waits for active transfers be
   }
 });
 
-test('one entry field resolves the password before file codes, and owner downloads require a session', async () => {
+test('code lookup and password login are separate, and owner downloads require a session', async () => {
   const context = await setup();
   try {
-    const response = await context.request('/resolve', {
+    const passwordAsCode = await context.request('/lookup', {
       method: 'POST',
-      body: JSON.stringify({ value: 'test-password' }),
+      body: JSON.stringify({ code: 'test-password' }),
     });
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { kind: 'upload' });
-    const ownerCookie = response.headers.get('set-cookie')?.split(';')[0];
-    assert.ok(ownerCookie);
+    assert.equal(passwordAsCode.status, 404);
+    assert.equal(passwordAsCode.headers.get('set-cookie'), null);
     await context.login();
     const file = await context.upload();
     assert.equal(file.code.replaceAll('-', '').length, 16);
-    const code = await context.request('/resolve', {
+    const code = await context.request('/lookup', {
       method: 'POST',
-      body: JSON.stringify({ value: file.code.toLowerCase() }),
+      headers: { Cookie: '' },
+      body: JSON.stringify({ code: file.code.toLowerCase() }),
     });
     assert.equal(code.status, 200);
-    const resolved = await code.json();
-    assert.equal(resolved.kind, 'download');
-    assert.equal(resolved.name, file.name);
+    assert.equal(downloadSchema.parse(await code.json()).name, file.name);
+    assert.equal(code.headers.get('set-cookie'), null);
+    const codeAsPassword = await context.request('/session', {
+      method: 'POST',
+      headers: { Cookie: '' },
+      body: JSON.stringify({ password: file.code }),
+    });
+    assert.equal(codeAsPassword.status, 401);
+    assert.equal(codeAsPassword.headers.get('set-cookie'), null);
     const download = await context.request(`/files/${file.id}/download`);
     assert.equal(download.status, 200);
     assert.equal(await download.text(), 'hello from drop');
@@ -442,11 +447,6 @@ test('one entry field resolves the password before file codes, and owner downloa
       context.origin + `/api/files/${file.id}/download`,
     );
     assert.equal(unauthorized.status, 401);
-    const missing = await context.request('/resolve', {
-      method: 'POST',
-      body: JSON.stringify({ value: 'incorrect' }),
-    });
-    assert.equal(missing.status, 404);
   } finally {
     await context.close();
   }
@@ -502,7 +502,6 @@ test('all credential endpoints share failure limits and authenticated owners byp
   try {
     await context.login();
     const routes = [
-      ['/resolve', { value: 'wrong' }],
       ['/session', { password: 'wrong' }],
       ['/lookup', { code: 'wrong' }],
     ] as const;
@@ -519,10 +518,10 @@ test('all credential endpoints share failure limits and authenticated owners byp
       );
       if (index === 9) assert.equal(response.headers.get('retry-after'), '60');
     }
-    const response = await context.request('/resolve', {
+    const response = await context.request('/session', {
       method: 'POST',
       headers: { Cookie: '', 'X-Forwarded-For': '203.0.113.1' },
-      body: JSON.stringify({ value: 'test-password' }),
+      body: JSON.stringify({ password: 'test-password' }),
     });
     assert.equal(response.status, 429);
     assert.equal((await context.request('/files')).status, 200);
@@ -544,7 +543,7 @@ test('switching credential endpoints cannot bypass the personal cooldown', async
   const context = await setup();
   try {
     const attempts = [
-      ['/resolve', { value: 'wrong' }],
+      ['/lookup', { code: 'wrong' }],
       ['/session', { password: 'wrong' }],
       ['/lookup', { code: 'wrong' }],
     ] as const;

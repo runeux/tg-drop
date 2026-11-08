@@ -120,9 +120,8 @@ export function createApp(
 
   app.use('/api/session', bodyLimit({ maxSize: 4096 }));
   app.use('/api/lookup', bodyLimit({ maxSize: 4096 }));
-  app.use('/api/resolve', bodyLimit({ maxSize: 4096 }));
 
-  for (const path of ['/api/resolve', '/api/session', '/api/lookup']) {
+  for (const path of ['/api/session', '/api/lookup']) {
     app.use(path, async (c, next) => {
       if (c.req.method !== 'POST' || authenticated(c)) return next();
       const address =
@@ -135,20 +134,6 @@ export function createApp(
       });
     });
   }
-
-  app.post('/api/resolve', async (c) => {
-    const { value } = z
-      .object({ value: z.string().min(1).max(256) })
-      .parse(await c.req.json());
-    if (verifyPassword(value, config.PASSWORD_HASH)) {
-      unlock(c);
-      return c.json({ kind: 'upload' });
-    }
-    return c.json({
-      kind: 'download',
-      ...downloadDetails(files.lookup(value)),
-    });
-  });
 
   app.post('/api/session', async (c) => {
     const { password } = z

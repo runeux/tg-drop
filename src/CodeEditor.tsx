@@ -81,41 +81,39 @@ export function CodeEditor({
       </div>
       <form
         ref={form}
-        className={`entry-form ${error ? 'has-error' : ''}`}
+        className={`code-editor-form ${error ? 'has-error' : ''}`}
         onSubmit={(event) => void submit(event)}
       >
-        <div className="entry-input-row">
-          <input
-            ref={input}
-            aria-label="Custom code"
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? 'code-editor-error' : undefined}
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder="custom code"
-            value={value}
-            readOnly={busy}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setError('');
-            }}
-          />
-          <motion.button
-            className="submit-button"
-            type="submit"
-            aria-label="Save code"
-            disabled={busy}
-            whileTap={{ scale: 0.95 }}
-          >
-            {busy ? (
-              <LoaderCircle size={19} className="spinning" />
-            ) : (
-              <ArrowRight size={21} />
-            )}
-          </motion.button>
-        </div>
+        <input
+          ref={input}
+          aria-label="Custom code"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'code-editor-error' : undefined}
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="custom code"
+          value={value}
+          readOnly={busy}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError('');
+          }}
+        />
+        <motion.button
+          className="code-submit"
+          type="submit"
+          aria-label="Save code"
+          disabled={busy}
+          whileTap={{ scale: 0.95 }}
+        >
+          {busy ? (
+            <LoaderCircle size={16} className="spinning" />
+          ) : (
+            <ArrowRight size={18} />
+          )}
+        </motion.button>
       </form>
       {error && (
         <p id="code-editor-error" role="alert">

@@ -13,18 +13,45 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 8px 6px;
+  margin: 0 0 12px 6px;
 }
 .code-editor-heading h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
 }
-.code-editor .entry-form {
-  position: relative;
+.code-editor-form {
+  display: flex;
+  height: 46px;
+  border: 1px solid #ffffff1a;
+  border-radius: 12px;
+  background: var(--bg-primary);
+  transition: border-color 150ms;
 }
-.code-editor .entry-form.has-error {
+.code-editor-form:focus-within {
+  border-color: #ffffff38;
+}
+.code-editor-form.has-error {
   border-color: var(--danger);
+}
+.code-editor-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 12px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+.code-editor-form input::placeholder {
+  color: var(--label-tertiary);
+}
+@media (pointer: coarse) {
+  .code-editor-form input {
+    font-size: 16px;
+  }
 }
 #code-editor-error {
   margin: 9px 6px 0;

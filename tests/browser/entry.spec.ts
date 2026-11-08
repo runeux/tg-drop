@@ -31,18 +31,19 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       'field-notes-with-a-very-long-filename-for-the-smallest-screen.pdf';
     await page.emulateMedia({ reducedMotion });
     await page.goto('/');
-    await page.getByLabel('Code or password').fill('test-password');
-    await page.getByLabel('Code or password').press('Enter');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByLabel('Password', { exact: true }).fill('test-password');
+    await page.getByLabel('Password', { exact: true }).press('Enter');
     await page.getByLabel('Choose files').setInputFiles({
       name,
       mimeType: 'application/pdf',
       buffer: Buffer.alloc(2_400_000, 'x'),
     });
     const row = page.getByRole('listitem').filter({ hasText: name });
-    await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
+    await expect(row.locator('.code-value')).toBeVisible();
     const code = await row.locator('.code-value').innerText();
     await page.getByRole('button', { name: 'Back', exact: true }).click();
-    const input = page.getByLabel('Code or password');
+    const input = page.getByLabel('Code', { exact: true });
     await input.fill(code);
     await expect(page.locator('.screen-entry')).toHaveCSS('transform', 'none');
     const downloads: string[] = [];

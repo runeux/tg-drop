@@ -10,13 +10,13 @@
   <img src="docs/home.png" alt="drop — code or password" width="960" />
 </p>
 
-enter a password to upload or a code to download. drop anywhere. click a filename to download, or its code to copy.
+enter a code to find a file or use the sign-in icon to unlock uploads. drop anywhere. open a row to peek at the file or use its download and copy actions.
 
 password protected uploads · telegram storage · private channel sync · manual removal
 
 photos, videos, and documents sent to the storage channel are imported automatically, including existing history. each album item gets its own code. photos download as telegram's available jpeg version; original document and video filenames are preserved when available.
 
-the dashboard separates files from a masonry gallery of images, gifs, and videos. previews keep their aspect ratios, open in a fullscreen viewer, and support downloading or copying a code. formats the browser cannot display remain downloadable.
+the dashboard lists all uploads together. images and videos open a fullscreen viewer, while files without a media preview show their details and an icon from [material icon theme](https://github.com/material-extensions/vscode-material-icon-theme).
 
 ### run
 

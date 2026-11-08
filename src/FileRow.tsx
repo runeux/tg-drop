@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   Copy,
+  Download,
   LoaderCircle,
   Pencil,
   RotateCcw,
@@ -10,6 +11,8 @@ import {
   X,
 } from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
+import { FileActionMenu } from './FileActionMenu';
+import { FileArtwork } from './FileArtwork';
 
 export type SavedFileProps = {
   file: DropFile;
@@ -20,6 +23,11 @@ export type SavedFileProps = {
   ref?: Ref<HTMLLIElement>;
 };
 
+export type PreviewSource = {
+  row: HTMLLIElement;
+  trigger: HTMLButtonElement;
+};
+
 export function SavedFile({
   file,
   detail,
@@ -27,8 +35,12 @@ export function SavedFile({
   remove,
   retry,
   editCode,
+  openPreview,
   ref,
-}: SavedFileProps & { editCode: (file: DropFile) => void }) {
+}: SavedFileProps & {
+  editCode: (file: DropFile) => void;
+  openPreview: (id: string, source: PreviewSource) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -71,6 +83,22 @@ export function SavedFile({
     }
   }
 
+  function resetConfirmation() {
+    clearTimeout(confirmTimer.current);
+    setConfirmDelete(false);
+  }
+
+  function requestRemoval() {
+    if (local || confirmDelete) {
+      void perform('remove');
+      return true;
+    }
+    setConfirmDelete(true);
+    clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(resetConfirmation, 3000);
+    return false;
+  }
+
   const failure =
     file.status === 'failed'
       ? (detail ?? 'Couldn’t save. Try again.')
@@ -94,65 +122,89 @@ export function SavedFile({
       : file.status === 'queued'
         ? 0
         : undefined;
+  const downloadUrl =
+    file.status === 'ready' ? `/api/files/${file.id}/download` : undefined;
 
   return (
     <FileRow
       ref={ref}
       name={file.name}
+      artwork={<FileArtwork file={file} />}
       size={file.size}
       detail={status}
-      downloadUrl={
-        file.status === 'ready' ? `/api/files/${file.id}/download` : undefined
-      }
+      open={downloadUrl ? (source) => openPreview(file.id, source) : undefined}
       error={failure}
       progress={progress}
-      code={
-        file.status === 'ready' ? (
-          <>
-            <motion.button
-              className={`file-code ${copied ? 'copied' : ''} ${copyError ? 'copy-error' : ''}`}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => {
-                void copy();
-              }}
-              aria-label={`Copy code ${file.code}`}
-              title={
-                copyError
-                  ? 'Select the code to copy'
-                  : copied
-                    ? 'Copied'
-                    : 'Copy code'
-              }
-            >
-              <span className="code-value">{file.code}</span>
-              <span className="code-symbol" aria-hidden="true">
-                <AnimatePresence initial={false} mode="popLayout">
-                  <motion.span
-                    key={copied ? 'copied' : 'copy'}
-                    initial={{ opacity: 0, scale: 0.75 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.75 }}
-                    transition={{ duration: 0.16 }}
-                  >
-                    {copied ? <Check size={14} /> : <Copy size={13} />}
-                  </motion.span>
-                </AnimatePresence>
-              </span>
-            </motion.button>
-            <motion.button
-              className="row-action"
-              whileTap={{ scale: 0.93 }}
-              aria-label={`Edit code for ${file.name}`}
-              title="Edit code"
-              onClick={() => editCode(file)}
-            >
-              <Pencil size={14} strokeWidth={1.7} />
-            </motion.button>
-          </>
-        ) : undefined
+      code={file.status === 'ready' ? file.code : undefined}
+      mobileActions={
+        downloadUrl && (
+          <FileActionMenu
+            name={file.name}
+            downloadUrl={downloadUrl}
+            busy={Boolean(busy)}
+            copied={copied}
+            confirmDelete={confirmDelete}
+            copy={() => void copy()}
+            edit={() => editCode(file)}
+            remove={requestRemoval}
+            resetConfirmation={resetConfirmation}
+          />
+        )
       }
       actions={
         <>
+          {downloadUrl && (
+            <>
+              <motion.a
+                className="row-action"
+                href={downloadUrl}
+                download
+                aria-label={`Download ${file.name}`}
+                title="Download"
+                whileTap={{ scale: 0.93 }}
+              >
+                <Download size={15} aria-hidden="true" />
+              </motion.a>
+              <motion.button
+                className={`row-action ${copied ? 'copied' : ''}`}
+                whileTap={{ scale: 0.93 }}
+                onClick={() => {
+                  void copy();
+                }}
+                aria-label={`Copy code ${file.code}`}
+                title={
+                  copyError
+                    ? 'Select the code to copy'
+                    : copied
+                      ? 'Copied'
+                      : 'Copy code'
+                }
+              >
+                <span className="code-symbol" aria-hidden="true">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    <motion.span
+                      key={copied ? 'copied' : 'copy'}
+                      initial={{ opacity: 0, scale: 0.75 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.75 }}
+                      transition={{ duration: 0.16 }}
+                    >
+                      {copied ? <Check size={14} /> : <Copy size={13} />}
+                    </motion.span>
+                  </AnimatePresence>
+                </span>
+              </motion.button>
+              <motion.button
+                className="row-action"
+                whileTap={{ scale: 0.93 }}
+                aria-label={`Edit code for ${file.name}`}
+                title="Edit code"
+                onClick={() => editCode(file)}
+              >
+                <Pencil size={14} strokeWidth={1.7} />
+              </motion.button>
+            </>
+          )}
           {file.status === 'failed' && (
             <motion.button
               className="row-action"
@@ -184,20 +236,9 @@ export function SavedFile({
                   : 'Remove file'
             }
             onKeyDown={(event) => {
-              if (event.key === 'Escape') setConfirmDelete(false);
+              if (event.key === 'Escape') resetConfirmation();
             }}
-            onClick={() => {
-              if (local || confirmDelete) {
-                void perform('remove');
-                return;
-              }
-              setConfirmDelete(true);
-              clearTimeout(confirmTimer.current);
-              confirmTimer.current = setTimeout(
-                () => setConfirmDelete(false),
-                3000,
-              );
-            }}
+            onClick={requestRemoval}
           >
             {busy === 'remove' ? (
               <LoaderCircle size={15} className="spinning" />
@@ -217,50 +258,95 @@ export function SavedFile({
 
 export function FileRow({
   name,
+  artwork,
   size,
   detail,
-  downloadUrl,
+  open,
   progress,
   error,
   code,
   actions,
+  mobileActions,
   ref,
 }: {
   name: string;
+  artwork: React.ReactNode;
   size: number;
   detail?: string;
-  downloadUrl?: string;
+  open?: (source: PreviewSource) => void;
   progress?: number;
   error?: string;
-  code?: React.ReactNode;
+  code?: string;
   actions: React.ReactNode;
+  mobileActions?: React.ReactNode;
   ref?: Ref<HTMLLIElement>;
 }) {
+  const trigger = useRef<HTMLButtonElement>(null);
   const dot = name.lastIndexOf('.');
   const extension = dot > 0 && name.length - dot <= 16 ? name.slice(dot) : '';
   const stem = extension ? name.slice(0, dot) : name;
+  const filename = (
+    <>
+      <span className="file-stem">{stem}</span>
+      {extension && <span className="file-extension">{extension}</span>}
+    </>
+  );
 
   return (
     <motion.li
       ref={ref}
       layout="position"
-      className={`file-row ${error ? 'file-failed' : ''}`}
+      className={`file-row ${code ? 'file-row-ready' : ''} ${error ? 'file-failed' : ''}`}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+      onClick={
+        open
+          ? (event) => {
+              const row = event.currentTarget;
+              const target = event.target;
+              if (
+                !trigger.current ||
+                !(target instanceof Element) ||
+                !row.contains(target) ||
+                target.closest('.file-actions button, .file-actions a')
+              )
+                return;
+              const selection = window.getSelection();
+              if (
+                selection &&
+                !selection.isCollapsed &&
+                row.contains(selection.anchorNode)
+              )
+                return;
+              trigger.current.focus({ preventScroll: true });
+              open({ row, trigger: trigger.current });
+            }
+          : undefined
+      }
     >
+      {artwork}
       <div className="file-info">
-        <a
-          className="file-name"
-          title={name}
-          aria-label={name}
-          href={downloadUrl}
-          download
-        >
-          <span className="file-stem">{stem}</span>
-          {extension && <span className="file-extension">{extension}</span>}
-        </a>
+        {open ? (
+          <button
+            ref={trigger}
+            type="button"
+            className="file-name"
+            title={name}
+            aria-label={`Open preview for ${name}`}
+            aria-haspopup="dialog"
+            onBlur={(event) => {
+              delete event.currentTarget.dataset.peekRestoredFocus;
+            }}
+          >
+            {filename}
+          </button>
+        ) : (
+          <span className="file-name" title={name}>
+            {filename}
+          </span>
+        )}
         <span className="file-meta">
           <span className="file-size">{formatSize(size)}</span>
           {detail && (
@@ -269,9 +355,16 @@ export function FileRow({
               <span className="file-detail">{detail}</span>
             </>
           )}
+          {code && (
+            <>
+              <span className="meta-dot">·</span>
+              <span className="code-value" title={code}>
+                {code}
+              </span>
+            </>
+          )}
         </span>
       </div>
-      {code && <div className="file-code-slot">{code}</div>}
       {progress !== undefined && (
         <div
           className="file-transfer"
@@ -290,7 +383,10 @@ export function FileRow({
           </span>
         </div>
       )}
-      <div className="file-actions">{actions}</div>
+      <div className="file-actions">
+        <div className="file-inline-actions">{actions}</div>
+        {mobileActions}
+      </div>
       {error && (
         <p className="file-error" role="alert">
           {error}

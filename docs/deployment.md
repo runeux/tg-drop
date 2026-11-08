@@ -56,7 +56,7 @@ sqlite and the telegram session are required to recover file access. back up `/s
 ## credential attempt limits
 
 - `rate-limiter-flexible` uses the existing sqlite connection; no redis or extra service is required.
-- anonymous password/code submissions share counters across resolve, login and lookup: the third failure per ipv4 address or ipv6 /64 starts a 60-second block; the tenth global failure blocks anonymous credential checks for 60 seconds.
+- anonymous password and code submissions share counters across login and lookup. the third failure per ipv4 address or ipv6 /64 starts a 60-second block. the tenth global failure blocks anonymous credential checks for 60 seconds.
 - counting windows last 60 seconds from the first failure; cooldowns start at the threshold failure, including near the end of a window. rejected requests do not extend cooldowns, and successful requests do not clear counters.
 - valid owner sessions bypass these limits. the dashboard, session restoration and existing download links stay available during anonymous lockouts. a fresh login is blocked even with the correct password until cooldown ends.
 - sqlite preserves limits across restarts; expired rows are removed on attempts. store failures reject anonymous checks with 503. a bounded, single-concurrency queue prevents parallel credential checks from overshooting the budget in this single-process deployment.

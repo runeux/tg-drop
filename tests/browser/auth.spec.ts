@@ -6,7 +6,8 @@ test('restores login without flashing the entry form and back revokes it', async
   browser,
 }) => {
   await page.goto('/');
-  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByLabel('Uploads', { exact: true })).toBeVisible();
   const cookie = (await context.cookies()).find(
@@ -46,17 +47,17 @@ test('restores login without flashing the entry form and back revokes it', async
       await route.continue();
     });
     await tab.goto('/');
-    await expect(tab.getByLabel('Code or password')).toHaveCount(0);
+    await expect(tab.getByLabel('Code', { exact: true })).toHaveCount(0);
     await expect(tab.getByLabel('Uploads', { exact: true })).toBeVisible();
     await tab.reload();
-    await expect(tab.getByLabel('Code or password')).toHaveCount(0);
+    await expect(tab.getByLabel('Code', { exact: true })).toHaveCount(0);
     await expect(tab.getByLabel('Uploads', { exact: true })).toBeVisible();
     await tab.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(tab.getByLabel('Code or password')).toBeVisible();
+    await expect(tab.getByLabel('Code', { exact: true })).toBeVisible();
     expect((await tab.request.get('/api/files')).status()).toBe(401);
     expect((await page.request.get('/api/files')).status()).toBe(401);
     await tab.reload();
-    await expect(tab.getByLabel('Code or password')).toBeVisible();
+    await expect(tab.getByLabel('Code', { exact: true })).toBeVisible();
     expect(
       (await returning.cookies()).some(
         (entry) => entry.name === 'drop_session',
@@ -71,7 +72,8 @@ test('failed logout stays on the dashboard and offers a retry', async ({
   page,
 }) => {
   await page.goto('/');
-  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByLabel('Uploads', { exact: true })).toBeVisible();
   await page.route('**/api/session', (route) =>
@@ -87,5 +89,5 @@ test('failed logout stays on the dashboard and offers a retry', async ({
   await expect(page.getByLabel('Uploads', { exact: true })).toBeVisible();
   await page.unroute('**/api/session');
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page.getByLabel('Code or password')).toBeVisible();
+  await expect(page.getByLabel('Code', { exact: true })).toBeVisible();
 });

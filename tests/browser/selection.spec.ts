@@ -7,7 +7,8 @@ test.beforeEach(async ({ page, context }, info) => {
     'X-Forwarded-For': `selection-${info.project.name}-${info.testId}`,
   });
   await page.goto('/');
-  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByLabel('Choose files')).toBeAttached();
 });
@@ -79,8 +80,8 @@ test('a dropped folder becomes a ZIP with its nested files intact', async ({
   const upload = await request;
   expect(upload.headers()['x-file-name']).toBe('bundle.zip');
   const row = page.getByRole('listitem').filter({ hasText: 'bundle.zip' });
-  await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
-  const url = await row.getByRole('link').getAttribute('href');
+  await expect(row.locator('.code-value')).toBeVisible();
+  const url = await row.locator('a[download]').getAttribute('href');
   if (!url) throw new Error('missing download url');
   const response = await page.request.get(url);
   expect(response.ok()).toBe(true);
@@ -101,12 +102,7 @@ test('a dropped folder becomes a ZIP with its nested files intact', async ({
   } finally {
     await zip.close();
   }
-  await expect(
-    page
-      .getByRole('listitem')
-      .filter({ hasText: 'bundle.zip' })
-      .getByRole('button', { name: /Copy code/ }),
-  ).toBeVisible();
+  await expect(row.locator('.code-value')).toBeVisible();
 });
 
 test('invalid selections never reach the upload endpoint', async ({ page }) => {

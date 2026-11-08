@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { downloadSchema, filesResponseSchema } from '../../shared/files';
 
 test.beforeEach(async ({ context }, info) => {
@@ -25,7 +25,8 @@ test.afterEach(async ({ page }) => {
 });
 
 async function unlock(page: Page) {
-  await page.getByLabel('Code or password').fill('test-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(
     page.getByRole('button', { name: /drop files here/ }),
@@ -45,6 +46,26 @@ async function dropFile(page: Page, name: string) {
   }, name);
 }
 
+const mobileLayout = () => test.info().project.name === 'iphone';
+const fileActions = (row: Locator) =>
+  row.getByRole('button', { name: /^Actions for / });
+
+async function deleteFile(page: Page, row: Locator) {
+  if (mobileLayout()) {
+    await fileActions(row).tap();
+    await page
+      .getByRole('menuitem', { name: 'delete file', exact: true })
+      .tap();
+    await expect(row).toBeVisible();
+    await page
+      .getByRole('menuitem', { name: 'confirm delete', exact: true })
+      .tap();
+  } else {
+    await row.getByRole('button', { name: /^Delete / }).click();
+    await row.getByRole('button', { name: /^Confirm delete / }).click();
+  }
+}
+
 test('password gate, automatic upload, copy code and repeatable manual downloads', async ({
   page,
   context,
@@ -53,11 +74,37 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByLabel('Code or password')).toBeVisible();
-  await page.getByLabel('Code or password').fill('incorrect');
+  const entry = page.getByLabel('Code', { exact: true });
+  await expect(entry).toHaveAttribute('type', 'text');
+  await expect(entry).toHaveAttribute('placeholder', 'code');
+  await expect(entry).toHaveCSS('font-family', /monospace/);
+  await expect(page.getByRole('button', { name: 'Continue' })).toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)',
+  );
+  await entry.fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('alert')).toHaveText('Code not found.');
-  await page.getByLabel('Code or password').fill('test-password');
+  expect((await page.request.get('/api/files')).status()).toBe(401);
+  const signIn = page.getByRole('button', { name: 'Sign in' });
+  const [signInBox, entryFormBox] = await Promise.all([
+    signIn.boundingBox(),
+    page.locator('.entry-form').boundingBox(),
+  ]);
+  if (!signInBox || !entryFormBox) throw new Error('missing entry controls');
+  expect(signInBox.x + signInBox.width).toBeLessThan(entryFormBox.x);
+  const password = page.getByLabel('Password', { exact: true });
+  await signIn.click();
+  await expect(password).toHaveAttribute('type', 'password');
+  await expect(password).toHaveAttribute('placeholder', 'password');
+  await expect(password).toBeFocused();
+  await expect(password).toHaveValue('');
+  await password.fill('test-password');
+  await page.getByRole('button', { name: 'Use a code' }).click();
+  await expect(entry).toBeFocused();
+  await expect(entry).toHaveValue('');
+  await signIn.click();
+  await password.fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   const name = `notes-${test.info().project.name}.txt`;
   await page.getByLabel('Choose files').setInputFiles({
@@ -66,21 +113,106 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
     buffer: Buffer.from('hello from browser'),
   });
   const row = page.getByRole('listitem').filter({ hasText: name });
-  await expect(row.getByRole('button', { name: /Copy code/ })).toBeVisible();
-  const code = await row.locator('.code-value').innerText();
+  const copy = row.getByRole('button', { name: /Copy code/ });
+  const edit = row.getByRole('button', { name: `Edit code for ${name}` });
+  const remove = row.getByRole('button', { name: `Delete ${name}` });
+  const code = await row.locator('.file-meta .code-value').innerText();
   expect(code.replaceAll('-', '')).toHaveLength(16);
-  const nameDownload = page.waitForEvent('download');
-  await row.getByRole('link', { name }).click();
-  expect(await (await nameDownload).failure()).toBeNull();
+  if (mobileLayout()) {
+    const trigger = fileActions(row);
+    await expect(row.getByRole('button')).toHaveCount(2);
+    await expect(trigger).toHaveCSS('width', '44px');
+    await expect(trigger).toHaveCSS('height', '44px');
+  } else {
+    await expect(fileActions(row)).toBeHidden();
+    await expect(copy).toHaveAccessibleName(`Copy code ${code}`);
+    await expect(copy).not.toContainText(code);
+    await expect(remove).toHaveCSS('opacity', '1');
+    await expect(row).toHaveCSS('opacity', '1');
+    const [downloadBox, copyBox, editBox, removeBox] = await Promise.all(
+      [
+        row.getByRole('link', { name: `Download ${name}` }),
+        copy,
+        edit,
+        remove,
+      ].map((action) => action.boundingBox()),
+    );
+    if (!downloadBox || !copyBox || !editBox || !removeBox)
+      throw new Error('missing file actions');
+    expect(copyBox.y).toBeCloseTo(downloadBox.y);
+    expect(copyBox.x - downloadBox.x).toBeCloseTo(editBox.x - copyBox.x);
+    expect(editBox.y).toBeCloseTo(copyBox.y);
+    expect(removeBox.y).toBeCloseTo(editBox.y);
+    expect(editBox.x - copyBox.x).toBeCloseTo(removeBox.x - editBox.x);
+  }
+  const filename = row.getByRole('button', {
+    name: `Open preview for ${name}`,
+  });
+  const downloads: string[] = [];
+  page.on('download', (download) =>
+    downloads.push(download.suggestedFilename()),
+  );
+  await filename.click();
+  const peek = page.getByRole('dialog', { name: `Preview ${name}` });
+  await expect(peek.getByRole('heading', { name })).toBeVisible();
+  await expect(peek.locator('.peek-file-meta')).toContainText(code);
+  await expect(
+    peek.locator('.peek-file-artwork .file-type-icon'),
+  ).toBeVisible();
+  await expect(row.locator('.file-artwork')).toHaveCSS('opacity', '1');
+  await expect(peek.getByRole('link', { name: `Download ${name}` })).toHaveCSS(
+    'border-radius',
+    '10px',
+  );
+  await expect(peek.locator('.peek-file-facts')).toHaveCSS('display', 'flex');
   if (browserName === 'chromium') {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await row.getByRole('button', { name: /Copy code/ }).click();
+    await peek.getByRole('button', { name: 'Copy share link' }).click();
+    await expect(
+      peek.getByRole('status').filter({ hasText: 'link copied' }),
+    ).toBeAttached();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      new URL(`/${code}`, page.url()).href,
+    );
+  }
+  expect(downloads).toEqual([]);
+  await peek.getByRole('button', { name: 'Close preview' }).click();
+  await expect(peek).toHaveCount(0);
+  await expect(filename).toBeFocused();
+  await row.locator('.file-meta').click();
+  await expect(peek).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(peek).toHaveCount(0);
+  await expect(filename).toBeFocused();
+  await expect(filename).toHaveCSS('outline-style', 'none');
+
+  const nameDownload = page.waitForEvent('download');
+  if (mobileLayout()) {
+    await fileActions(row).tap();
+    await expect(page.getByRole('menuitem').first()).toHaveText('download');
+    await page.getByRole('menuitem', { name: 'download', exact: true }).tap();
+  } else {
+    await row.getByRole('link', { name: `Download ${name}` }).click();
+  }
+  expect(await (await nameDownload).failure()).toBeNull();
+  expect(downloads).toEqual([name]);
+  await expect(peek).toHaveCount(0);
+  if (browserName === 'chromium') {
+    if (mobileLayout()) {
+      await fileActions(row).tap();
+      await page
+        .getByRole('menuitem', { name: 'copy code', exact: true })
+        .tap();
+      await expect(page.getByRole('menu')).toBeHidden();
+    } else {
+      await copy.click();
+    }
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       code,
     );
   }
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByLabel('Code or password').fill(code.toLowerCase());
+  await page.getByLabel('Code', { exact: true }).fill(code.toLowerCase());
   await expect(page.locator('.screen-entry')).toHaveCSS('transform', 'none');
   const submitBounds = await page
     .getByRole('button', { name: 'Continue' })
@@ -103,14 +235,13 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
   expect(download.suggestedFilename()).toBe(name);
   expect(await download.failure()).toBeNull();
   await page.getByRole('button', { name: 'back', exact: true }).click();
-  await expect(page.getByLabel('Code or password')).toBeFocused();
-  await expect(page.getByLabel('Code or password')).toHaveValue('');
+  await expect(page.getByLabel('Code', { exact: true })).toBeFocused();
+  await expect(page.getByLabel('Code', { exact: true })).toHaveValue('');
   await unlock(page);
-  await row.getByRole('button', { name: /^Delete / }).click();
-  await row.getByRole('button', { name: /^Confirm delete / }).click();
+  await deleteFile(page, row);
   await expect(row).toHaveCount(0);
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await page.getByLabel('Code or password').fill(code);
+  await page.getByLabel('Code', { exact: true }).fill(code);
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('alert')).toHaveText('Code not found.');
   expect(errors).toEqual([]);
@@ -121,27 +252,23 @@ test('whole-page drop waits for password and files persist until manual removal'
 }) => {
   await page.goto('/');
   await dropFile(page, `pending-${test.info().project.name}.txt`);
-  await expect(page.getByLabel('Code or password')).toBeVisible();
-  await page.getByLabel('Code or password').fill('test-password');
+  await expect(page.getByLabel('Code', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.getByRole('button', { name: 'Continue' }).click();
   const pendingRow = page
     .getByRole('listitem')
     .filter({ hasText: `pending-${test.info().project.name}.txt` });
-  await expect(
-    pendingRow.getByRole('button', { name: /Copy code/ }),
-  ).toBeVisible();
+  await expect(pendingRow.locator('.code-value')).toBeVisible();
   await dropFile(page, `persistent-${test.info().project.name}.txt`);
   const persistentRow = page
     .getByRole('listitem')
     .filter({ hasText: `persistent-${test.info().project.name}.txt` });
-  await expect(
-    persistentRow.getByRole('button', { name: /Copy code/ }),
-  ).toBeVisible();
+  await expect(persistentRow.locator('.code-value')).toBeVisible();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await unlock(page);
   await expect(persistentRow).toBeVisible();
-  await persistentRow.getByRole('button', { name: /^Delete / }).click();
-  await persistentRow.getByRole('button', { name: /^Confirm delete / }).click();
+  await deleteFile(page, persistentRow);
   await expect(persistentRow).toHaveCount(0);
   expect(
     await page.evaluate(
@@ -174,8 +301,15 @@ test('dashboard code edits replace the old code and share links wait for a click
   expect(before.ok()).toBe(true);
   const { url } = downloadSchema.parse(await before.json());
 
-  const edit = row.getByRole('button', { name: 'Edit code for vpn.txt' });
-  await edit.click();
+  const edit = mobileLayout()
+    ? fileActions(row)
+    : row.getByRole('button', { name: 'Edit code for vpn.txt' });
+  if (mobileLayout()) {
+    await edit.tap();
+    await page.getByRole('menuitem', { name: 'edit code', exact: true }).tap();
+  } else {
+    await edit.click();
+  }
   const dialog = page.getByRole('dialog', { name: 'edit code' });
   const input = dialog.getByRole('textbox', { name: 'Custom code' });
   await expect(input).toBeFocused();
@@ -204,9 +338,7 @@ test('dashboard code edits replace the old code and share links wait for a click
   await dialog.getByRole('button', { name: 'Save code' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(edit).toBeFocused();
-  await expect(
-    row.getByRole('button', { name: 'Copy code VPN' }),
-  ).toBeVisible();
+  await expect(row.locator('.code-value')).toHaveText('VPN');
   expect((await lookup(original)).status()).toBe(404);
   expect((await page.request.get(url)).status()).toBe(404);
 
@@ -242,7 +374,7 @@ test('dashboard code edits replace the old code and share links wait for a click
     expect((await transfer).suggestedFilename()).toBe('vpn.txt');
     await share.getByRole('button', { name: 'back', exact: true }).click();
     await expect(share).toHaveURL(`${origin}/`);
-    await share.getByLabel('Code or password').fill('Vpn');
+    await share.getByLabel('Code', { exact: true }).fill('Vpn');
     await share.getByRole('button', { name: 'Continue' }).click();
     await expect(button).toBeVisible();
     expect(downloads).toEqual(['vpn.txt']);
@@ -259,17 +391,104 @@ test('keyboard navigation and reduced motion remain usable', async ({
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.getByLabel('Code or password')).toBeFocused();
-  await page.getByLabel('Code or password').fill('test-password');
+  await expect(page.getByLabel('Code', { exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('Password', { exact: true })).toBeFocused();
+  await expect(
+    page.locator('.entry-placeholder').getByText('password', { exact: true }),
+  ).toHaveCSS('opacity', '1');
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
   await page.keyboard.press('Enter');
   await expect(
     page.getByRole('button', { name: /drop files here/ }),
   ).toBeVisible();
 });
 
+test('library search combines filename, code and type filters', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await unlock(page);
+  await expect(page.getByRole('tablist')).toHaveCount(0);
+
+  const search = page.getByRole('searchbox', { name: 'Search files' });
+  const typeFilter = page.getByRole('button', { name: 'any type' });
+  const menu = page.getByRole('menu');
+  const all = menu.getByRole('menuitemcheckbox', { name: 'all', exact: true });
+  await typeFilter.click();
+  await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(1);
+  await expect(all).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+
+  await page.getByLabel('Choose files').setInputFiles([
+    ...['field-notes.TXT', 'meeting.txt', 'schedule.pdf', 'LICENSE'].map(
+      (name) => ({
+        name,
+        mimeType: 'text/plain',
+        buffer: Buffer.from('example file'),
+      }),
+    ),
+    {
+      name: 'diagram.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"/>',
+      ),
+    },
+  ]);
+  const rows = page
+    .getByRole('list', { name: 'Files', exact: true })
+    .getByRole('listitem');
+  await expect(rows.locator('.code-value')).toHaveCount(5);
+  const pdf = rows.filter({ hasText: 'schedule.pdf' });
+  await expect(pdf.locator('.file-type-icon')).toHaveAttribute(
+    'src',
+    '/assets/file-icons/pdf.svg',
+  );
+  const code = await pdf.locator('.code-value').innerText();
+  await search.fill('FIELD-NOTES');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('field-notes.TXT');
+  await search.fill(code.toLowerCase());
+  await expect(pdf).toBeVisible();
+  await expect(rows).toHaveCount(1);
+
+  await typeFilter.click();
+  const pdfType = menu.getByRole('menuitemcheckbox', { name: 'pdf 1' });
+  await expect(
+    menu.getByRole('menuitemcheckbox', { name: 'txt 2' }),
+  ).toHaveAttribute('aria-checked', 'true');
+  await expect(
+    menu.getByRole('menuitemcheckbox', { name: 'no extension 1' }),
+  ).toBeVisible();
+  await expect(
+    menu.getByRole('menuitemcheckbox', { name: 'svg 1' }),
+  ).toBeVisible();
+  await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(5);
+  await pdfType.click();
+  await expect(all).toHaveAttribute('aria-checked', 'false');
+  await expect(pdfType).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByText('no matching files')).toBeVisible();
+  await all.click();
+  await expect(all).toHaveAttribute('aria-checked', 'true');
+  await expect(pdfType).toHaveAttribute('aria-checked', 'true');
+  await expect(pdf).toBeVisible();
+
+  await pdfType.click();
+  await page.keyboard.press('Escape');
+  await search.fill('');
+  await expect(rows).toHaveCount(4);
+  await expect(pdf).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Open preview for diagram.svg' }),
+  ).toBeVisible();
+});
+
 test('screenshots', async ({ page }, info) => {
   await page.goto('/');
-  await page.getByLabel('Code or password').waitFor();
+  await page.getByLabel('Code', { exact: true }).waitFor();
   if (info.project.name === 'desktop') {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.screenshot({ path: 'docs/home.png' });
@@ -292,14 +511,14 @@ test('screenshots', async ({ page }, info) => {
       buffer: Buffer.from('preview image'),
     },
   ]);
-  await expect(page.getByRole('button', { name: /Copy code/ })).toHaveCount(2);
-  await page.getByRole('tab', { name: 'gallery' }).click();
   await expect(
-    page.getByRole('article', { name: 'wallpaper.heic' }),
+    page.getByRole('button', {
+      name: mobileLayout() ? /^Actions for / : /Copy code/,
+    }),
+  ).toHaveCount(3);
+  await expect(
+    page.getByRole('button', { name: 'Open preview for wallpaper.heic' }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: /Copy code/ })).toHaveCount(1);
-  await page.getByRole('tab', { name: 'files' }).click();
-  await expect(page.locator('.tab-indicator')).toHaveCSS('transform', 'none');
   for (const row of await page.getByRole('listitem').all()) {
     await expect(row).toHaveCSS('opacity', '1');
     await expect(row).toHaveCSS('transform', 'none');

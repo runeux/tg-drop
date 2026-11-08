@@ -5,13 +5,21 @@ import {
   useIsPresent,
   useReducedMotion,
 } from 'motion/react';
-import { ArrowLeft, ArrowRight, LoaderCircle } from 'lucide-react';
-import { api, message } from './api';
-import { downloadSchema, resolveSchema, formatSize } from '../shared/files';
+import { ArrowLeft, ArrowRight, LoaderCircle, LogIn } from 'lucide-react';
+import { api, message, okSchema } from './api';
+import { downloadSchema, formatSize } from '../shared/files';
 import { EntryDownload, type Download } from './EntryDownload';
 import { HotkeyBadge } from './HotkeyBadge';
 
 const ease = [0.22, 1, 0.36, 1] as const;
+
+function lookupCode(code: string, signal: AbortSignal) {
+  return api('/lookup', downloadSchema, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+    signal,
+  });
+}
 
 export function EntryForm({
   sharePath,
@@ -22,6 +30,7 @@ export function EntryForm({
   clearSharePath: () => void;
   onPassword: () => void;
 }) {
+  const [mode, setMode] = useState<'code' | 'password'>('code');
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,6 +39,7 @@ export function EntryForm({
   const request = useRef<AbortController | null>(null);
   const isPresent = useIsPresent();
   const reducedMotion = useReducedMotion();
+  const passwordMode = mode === 'password';
   const duration = reducedMotion ? 0.12 : 0.42;
   const blur = reducedMotion ? 'blur(0px)' : 'blur(5px)';
 
@@ -58,11 +68,7 @@ export function EntryForm({
       }
       setBusy(true);
       try {
-        const result = await api('/lookup', downloadSchema, {
-          method: 'POST',
-          body: JSON.stringify({ code }),
-          signal: controller.signal,
-        });
+        const result = await lookupCode(code, controller.signal);
         if (!controller.signal.aborted) setDownload(result);
       } catch (error) {
         if (!controller.signal.aborted) setError(message(error));
@@ -92,6 +98,21 @@ export function EntryForm({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [download, isPresent, reset]);
 
+  function updateValue(value: string) {
+    request.current?.abort();
+    request.current = null;
+    setBusy(false);
+    setValue(value);
+    setError('');
+  }
+
+  function switchMode() {
+    updateValue('');
+    clearSharePath();
+    setMode((current) => (current === 'code' ? 'password' : 'code'));
+    inputRef.current?.focus({ preventScroll: true });
+  }
+
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!value.trim() || busy || download) return;
@@ -101,14 +122,17 @@ export function EntryForm({
     setBusy(true);
     setError('');
     try {
-      const result = await api('/resolve', resolveSchema, {
-        method: 'POST',
-        body: JSON.stringify({ value }),
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-      if (result.kind === 'upload') onPassword();
-      else setDownload(result);
+      if (passwordMode) {
+        await api('/session', okSchema, {
+          method: 'POST',
+          body: JSON.stringify({ password: value }),
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) onPassword();
+      } else {
+        const result = await lookupCode(value, controller.signal);
+        if (!controller.signal.aborted) setDownload(result);
+      }
     } catch (error) {
       if (controller.signal.aborted) return;
       setError(message(error));
@@ -123,6 +147,25 @@ export function EntryForm({
 
   return (
     <div className="entry">
+      <motion.button
+        className="code-submit entry-mode"
+        type="button"
+        aria-label={passwordMode ? 'Use a code' : 'Sign in'}
+        title={passwordMode ? 'Use a code' : 'Sign in'}
+        inert={Boolean(download)}
+        aria-hidden={Boolean(download)}
+        onClick={switchMode}
+        initial={false}
+        animate={{ opacity: download ? 0 : 1 }}
+        transition={{ type: 'tween', duration, ease }}
+        whileTap={{ scale: 0.95 }}
+      >
+        {passwordMode ? (
+          <ArrowLeft size={18} aria-hidden="true" />
+        ) : (
+          <LogIn size={18} aria-hidden="true" />
+        )}
+      </motion.button>
       <form
         className={`entry-form ${error ? 'has-error' : ''}`}
         onSubmit={(event) => {
@@ -141,38 +184,58 @@ export function EntryForm({
           }}
           transition={{ type: 'tween', duration, ease }}
         >
-          <input
-            ref={inputRef}
-            aria-label="Code or password"
-            aria-describedby={error ? 'entry-error' : undefined}
-            aria-invalid={Boolean(error)}
-            type="password"
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder="code or password"
-            value={value}
-            maxLength={256}
-            onChange={(event) => {
-              request.current?.abort();
-              request.current = null;
-              setBusy(false);
-              setValue(event.target.value);
-              setError('');
-            }}
-          />
+          <div className="entry-field">
+            <input
+              ref={inputRef}
+              aria-label={passwordMode ? 'Password' : 'Code'}
+              aria-describedby={error ? 'entry-error' : undefined}
+              aria-invalid={Boolean(error)}
+              type={passwordMode ? 'password' : 'text'}
+              autoComplete={passwordMode ? 'current-password' : 'off'}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder={mode}
+              value={value}
+              maxLength={256}
+              onChange={(event) => updateValue(event.target.value)}
+            />
+            <div className="entry-placeholder" aria-hidden="true">
+              {(['code', 'password'] as const).map((label) => (
+                <motion.span
+                  key={label}
+                  initial={false}
+                  animate={{
+                    opacity: label === mode ? 1 : 0,
+                    y:
+                      reducedMotion || label === mode
+                        ? 0
+                        : label === 'code'
+                          ? -4
+                          : 4,
+                  }}
+                  transition={
+                    reducedMotion
+                      ? { duration: 0.12 }
+                      : { type: 'spring', duration: 0.24, bounce: 0 }
+                  }
+                >
+                  {label}
+                </motion.span>
+              ))}
+            </div>
+          </div>
           <motion.button
-            className="submit-button"
+            className="code-submit"
             type="submit"
             aria-label="Continue"
             disabled={busy || !value.trim()}
             whileTap={busy || !value.trim() ? undefined : { scale: 0.95 }}
           >
             {busy ? (
-              <LoaderCircle size={19} className="spinning" />
+              <LoaderCircle size={16} className="spinning" />
             ) : (
-              <ArrowRight size={21} />
+              <ArrowRight size={18} />
             )}
           </motion.button>
         </motion.div>
