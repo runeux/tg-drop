@@ -14,7 +14,7 @@ the minimatch 11 override fixes [glob amplification in lint tooling](https://git
 - caddy: `/etc/caddy/tg-drop.Caddyfile`, imported by `/etc/caddy/Caddyfile`
 - backend: `127.0.0.1:8787`
 
-set `ORIGIN=https://f.mythra.pw` and `DATA_DIR=/data` in the server environment. copy the closed telegram session into the data directory before startup. never run the same session on two machines simultaneously.
+replace `drop.example.com` in the [caddy config](../deploy/Caddyfile) with your domain. set `ORIGIN` to the matching https url and `DATA_DIR=/data` in the server environment. copy the closed telegram session into the data directory before startup. never run the same session on two machines simultaneously.
 
 ```sh
 npm ci
