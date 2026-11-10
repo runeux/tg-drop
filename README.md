@@ -39,7 +39,7 @@ setup prompts for an upload password and your api credentials. during telegram l
 
 for disk-only development, use `STORAGE=local npm run setup` in place of `npm run setup` and skip telegram login.
 
-for docker, https, and backups, see the [deployment notes](docs/deployment.md).
+for systemd, https, and backups, see the [deployment notes](docs/deployment.md).
 
 ### checks
 
