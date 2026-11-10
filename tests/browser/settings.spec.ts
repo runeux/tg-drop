@@ -16,6 +16,7 @@ test('first sign-in, source settings, re-sync and filters work together', async 
   let settings: Settings = { sources: [], tags: [] };
   let sync: SyncStatus = { running: false, error: null };
   let resyncs = 0;
+  const selectPopup = page.locator('[data-slot="select-content"][data-open]');
   let chatGate: Promise<void> | undefined;
   await page.route('**/api/settings', async (route) => {
     if (route.request().method() === 'PUT') {
@@ -78,11 +79,11 @@ test('first sign-in, source settings, re-sync and filters work together', async 
   await expect(
     page.getByRole('button', { name: 'Remove source 1' }),
   ).toHaveCount(0);
-  await page.getByRole('button', { name: 'Telegram source 1' }).click();
-  await page.getByRole('menuitemradio', { name: 'market notes' }).click();
+  await page.getByRole('combobox', { name: 'Telegram source 1' }).click();
+  await selectPopup.getByRole('option', { name: 'market notes' }).click();
   await page.getByRole('button', { name: 'add another source' }).click();
-  await page.getByRole('button', { name: 'Telegram source 2' }).click();
-  await page.getByRole('menuitemradio', { name: 'saved messages' }).click();
+  await page.getByRole('combobox', { name: 'Telegram source 2' }).click();
+  await selectPopup.getByRole('option', { name: 'saved messages' }).click();
   await continueButton.click();
 
   const trigger = page.getByRole('button', { name: 'Settings', exact: true });
@@ -124,20 +125,22 @@ test('first sign-in, source settings, re-sync and filters work together', async 
   await expect(
     dialog.getByRole('status', { name: 'Refreshing chats' }),
   ).toBeVisible();
-  const firstSource = dialog.getByRole('button', { name: 'Telegram source 1' });
+  const firstSource = dialog.getByRole('combobox', {
+    name: 'Telegram source 1',
+  });
   await expect(firstSource).toBeEnabled();
   await firstSource.focus();
   await page.keyboard.press('ArrowDown');
   await expect(
-    dialog.getByRole('menuitemradio', { name: 'long-term research archive' }),
+    selectPopup.getByRole('option', { name: 'long-term research archive' }),
   ).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(dialog.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await expect(dialog).toBeVisible();
   await expect(firstSource).toBeFocused();
   await firstSource.click();
-  await dialog
-    .getByRole('menuitemradio', { name: 'long-term research archive' })
+  await selectPopup
+    .getByRole('option', { name: 'long-term research archive' })
     .click();
   await expect(firstSource).toHaveText('long-term research archive');
   await expect
@@ -160,12 +163,12 @@ test('first sign-in, source settings, re-sync and filters work together', async 
   await dialog.getByLabel('Tag label 1').fill('crypto');
   await dialog.getByRole('button', { name: 'Color for crypto' }).click();
   await expect(
-    dialog.getByRole('group', { name: 'Tag colors' }).getByRole('button'),
+    page.getByRole('group', { name: 'Tag colors' }).getByRole('button'),
   ).toHaveCount(12);
-  await dialog.getByRole('button', { name: 'amber', exact: true }).click();
-  const tagPicker = dialog.getByRole('button', { name: 'Tag for source 1' });
+  await page.getByRole('button', { name: 'amber', exact: true }).click();
+  const tagPicker = dialog.getByRole('combobox', { name: 'Tag for source 1' });
   await tagPicker.click();
-  const crypto = dialog.getByRole('menuitemradio', { name: 'crypto' });
+  const crypto = selectPopup.getByRole('option', { name: 'crypto' });
   await expect(crypto.locator('.tag-badge')).toHaveText('crypto');
   await crypto.click();
   await expect(tagPicker.locator('.tag-badge')).toHaveText('crypto');

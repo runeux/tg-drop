@@ -8,13 +8,13 @@ export function MediaViewerActions({
   editCode,
   remove,
   close,
-  mobileMenu,
+  layout,
 }: {
   file: DropFile;
   editCode: (file: DropFile) => void;
   remove: () => Promise<void>;
   close: () => void;
-  mobileMenu: boolean;
+  layout: 'file' | 'media';
 }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -49,11 +49,26 @@ export function MediaViewerActions({
 
   const downloadUrl = `/api/files/${file.id}/download`;
 
+  const menu = (
+    <FileActionMenu
+      name={file.name}
+      code={file.code}
+      downloadUrl={layout === 'media' ? downloadUrl : undefined}
+      busy={busy}
+      confirmDelete={confirm}
+      edit={() => editCode(file)}
+      remove={requestRemoval}
+      resetConfirmation={() => setConfirm(false)}
+      className={
+        layout === 'media' ? 'viewer-action viewer-mobile-menu' : 'peek-more'
+      }
+    />
+  );
+  if (layout === 'file') return menu;
+
   return (
     <>
-      <div
-        className={`viewer-actions${mobileMenu ? ' viewer-actions-desktop' : ''}`}
-      >
+      <div className="viewer-actions viewer-actions-desktop">
         <a
           className="viewer-action"
           href={downloadUrl}
@@ -99,19 +114,7 @@ export function MediaViewerActions({
               : ''}
         </span>
       </div>
-      {mobileMenu && (
-        <FileActionMenu
-          name={file.name}
-          code={file.code}
-          downloadUrl={downloadUrl}
-          busy={busy}
-          confirmDelete={confirm}
-          edit={() => editCode(file)}
-          remove={requestRemoval}
-          resetConfirmation={() => setConfirm(false)}
-          className="viewer-action viewer-mobile-menu"
-        />
-      )}
+      {menu}
     </>
   );
 }

@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { Field, FieldGroup } from '@/components/ui/field';
 import { Plus, X } from 'lucide-react';
 import type { ChatOption, Tag } from '../shared/settings';
 import { SourcePicker } from './SourcePicker';
@@ -44,9 +46,9 @@ export function SourceFields({
     );
 
   return (
-    <div className="source-fields">
+    <FieldGroup className="source-fields">
       {sources.map(({ key, id, tagId }, index) => (
-        <div className="source-field" key={key}>
+        <Field orientation="horizontal" className="source-field" key={key}>
           <SourcePicker
             label={`Telegram source ${index + 1}`}
             placeholder="choose a chat"
@@ -69,9 +71,11 @@ export function SourceFields({
             />
           )}
           {sources.length > 1 && (
-            <button
+            <Button
+              variant="ghost"
               type="button"
               className="row-action"
+              size="icon"
               aria-label={`Remove source ${index + 1}`}
               disabled={busy}
               onClick={() =>
@@ -79,11 +83,12 @@ export function SourceFields({
               }
             >
               <X size={16} aria-hidden="true" />
-            </button>
+            </Button>
           )}
-        </div>
+        </Field>
       ))}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         className="settings-quiet"
         disabled={busy || !chats.some((chat) => !selected.has(chat.id))}
@@ -94,9 +99,9 @@ export function SourceFields({
           ])
         }
       >
-        <Plus size={15} aria-hidden="true" />
+        <Plus data-icon="inline-start" aria-hidden="true" />
         {sources.length ? 'add another source' : 'add a source'}
-      </button>
-    </div>
+      </Button>
+    </FieldGroup>
   );
 }

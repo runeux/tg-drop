@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type MouseEventHandler,
-  type Ref,
-} from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { motion } from 'motion/react';
 import {
   Check,
@@ -15,7 +9,8 @@ import {
   X,
 } from 'lucide-react';
 import { formatSize, type DropFile } from '../shared/files';
-import { FileActionMenu, type FileMenuState } from './FileActionMenu';
+import { FileActionMenu } from './FileActionMenu';
+import { ContextMenuTrigger } from '@/components/ui/context-menu';
 import { FileArtwork } from './FileArtwork';
 import { TagBadge } from './TagBadge';
 import type { Tag } from '../shared/settings';
@@ -49,7 +44,6 @@ export function SavedFile({
   editCode: (file: DropFile) => void;
   openPreview: (id: string, source: PreviewSource) => void;
 }) {
-  const [menu, setMenu] = useState<FileMenuState>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<'remove' | 'retry' | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -111,113 +105,104 @@ export function SavedFile({
   const downloadUrl =
     file.status === 'ready' ? `/api/files/${file.id}/download` : undefined;
 
+  const rowProps = {
+    ref,
+    name: file.name,
+    artwork: <FileArtwork file={file} />,
+    size: file.size,
+    tag: file.tag,
+    detail: status,
+    error: failure,
+    progress,
+  };
+  if (downloadUrl) {
+    return (
+      <FileActionMenu
+        name={file.name}
+        code={file.code}
+        busy={Boolean(busy)}
+        confirmDelete={confirmDelete}
+        edit={() => editCode(file)}
+        remove={requestRemoval}
+        resetConfirmation={resetConfirmation}
+        renderRow={(menu) => (
+          <FileRow
+            {...rowProps}
+            contextMenu
+            open={(source) => openPreview(file.id, source)}
+            code={!generatedCode.test(file.code) ? file.code : undefined}
+            actions={
+              <>
+                <motion.a
+                  className="row-action"
+                  href={downloadUrl}
+                  download
+                  aria-label={`Download ${file.name}`}
+                  title="Download"
+                  whileTap={{ scale: 0.93 }}
+                >
+                  <Download size={16} aria-hidden="true" />
+                </motion.a>
+                {menu}
+              </>
+            }
+          />
+        )}
+      />
+    );
+  }
+
   return (
     <FileRow
-      ref={ref}
-      name={file.name}
-      artwork={<FileArtwork file={file} />}
-      size={file.size}
-      tag={file.tag}
-      detail={status}
-      open={downloadUrl ? (source) => openPreview(file.id, source) : undefined}
-      error={failure}
-      progress={progress}
-      code={
-        downloadUrl && !generatedCode.test(file.code) ? file.code : undefined
-      }
-      onContextMenu={
-        downloadUrl && !busy
-          ? (event) => {
-              if (
-                !(event.target instanceof Node) ||
-                !event.currentTarget.contains(event.target)
-              )
-                return;
-              event.preventDefault();
-              const rect = event.currentTarget.getBoundingClientRect();
-              setMenu({
-                open: true,
-                point:
-                  event.clientX || event.clientY
-                    ? { x: event.clientX, y: event.clientY }
-                    : { x: rect.left, y: rect.bottom },
-              });
-            }
-          : undefined
-      }
+      {...rowProps}
       actions={
-        downloadUrl ? (
-          <>
-            <motion.a
-              className="row-action"
-              href={downloadUrl}
-              download
-              aria-label={`Download ${file.name}`}
-              title="Download"
-              whileTap={{ scale: 0.93 }}
-            >
-              <Download size={16} aria-hidden="true" />
-            </motion.a>
-            <FileActionMenu
-              name={file.name}
-              code={file.code}
-              busy={Boolean(busy)}
-              confirmDelete={confirmDelete}
-              edit={() => editCode(file)}
-              remove={requestRemoval}
-              resetConfirmation={resetConfirmation}
-              control={{ state: menu, setState: setMenu }}
-            />
-          </>
-        ) : (
-          <>
-            {file.status === 'failed' && (
-              <motion.button
-                className="row-action"
-                whileTap={{ scale: 0.93 }}
-                disabled={Boolean(busy)}
-                aria-label={`Retry ${file.name}`}
-                title="Retry"
-                onClick={() => {
-                  void perform('retry');
-                }}
-              >
-                {busy === 'retry' ? (
-                  <LoaderCircle size={15} className="spinning" />
-                ) : (
-                  <RotateCcw size={15} />
-                )}
-              </motion.button>
-            )}
+        <>
+          {file.status === 'failed' && (
             <motion.button
-              className={`row-action remove-action ${confirmDelete ? 'confirm-delete' : ''}`}
+              className="row-action"
               whileTap={{ scale: 0.93 }}
               disabled={Boolean(busy)}
-              aria-label={`${local ? 'Cancel' : confirmDelete ? 'Confirm delete' : 'Delete'} ${file.name}`}
-              title={
-                local
-                  ? 'Cancel upload'
-                  : confirmDelete
-                    ? 'Confirm removal'
-                    : 'Remove file'
-              }
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') resetConfirmation();
+              aria-label={`Retry ${file.name}`}
+              title="Retry"
+              onClick={() => {
+                void perform('retry');
               }}
-              onClick={requestRemoval}
             >
-              {busy === 'remove' ? (
+              {busy === 'retry' ? (
                 <LoaderCircle size={15} className="spinning" />
-              ) : local ? (
-                <X size={16} />
-              ) : confirmDelete ? (
-                <Check size={16} />
               ) : (
-                <Trash2 size={15} strokeWidth={1.5} />
+                <RotateCcw size={15} />
               )}
             </motion.button>
-          </>
-        )
+          )}
+          <motion.button
+            className={`row-action remove-action ${confirmDelete ? 'confirm-delete' : ''}`}
+            whileTap={{ scale: 0.93 }}
+            disabled={Boolean(busy)}
+            aria-label={`${local ? 'Cancel' : confirmDelete ? 'Confirm delete' : 'Delete'} ${file.name}`}
+            title={
+              local
+                ? 'Cancel upload'
+                : confirmDelete
+                  ? 'Confirm removal'
+                  : 'Remove file'
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') resetConfirmation();
+            }}
+            onClick={requestRemoval}
+          >
+            {busy === 'remove' ? (
+              <LoaderCircle size={15} className="spinning" />
+            ) : local ? (
+              <X size={16} />
+            ) : confirmDelete ? (
+              <Check size={16} />
+            ) : (
+              <Trash2 size={15} strokeWidth={1.5} />
+            )}
+          </motion.button>
+        </>
       }
     />
   );
@@ -234,7 +219,7 @@ export function FileRow({
   error,
   code,
   actions,
-  onContextMenu,
+  contextMenu = false,
   ref,
 }: {
   name: string;
@@ -247,7 +232,7 @@ export function FileRow({
   error?: string;
   code?: string;
   actions: React.ReactNode;
-  onContextMenu?: MouseEventHandler<HTMLLIElement>;
+  contextMenu?: boolean;
   ref?: Ref<HTMLLIElement>;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
@@ -261,7 +246,7 @@ export function FileRow({
     </>
   );
 
-  return (
+  const row = (
     <motion.li
       ref={ref}
       layout="position"
@@ -270,7 +255,6 @@ export function FileRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
-      onContextMenu={onContextMenu}
       onClick={
         open
           ? (event) => {
@@ -361,5 +345,10 @@ export function FileRow({
         </p>
       )}
     </motion.li>
+  );
+  return contextMenu ? (
+    <ContextMenuTrigger className="select-text" render={row} />
+  ) : (
+    row
   );
 }

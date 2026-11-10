@@ -1,21 +1,30 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import * as Menu from '@radix-ui/react-menu';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  Check,
-  Copy,
-  Download,
-  Ellipsis,
-  Pencil,
-  Share,
-  Trash2,
-} from 'lucide-react';
+  RiCheckLine,
+  RiDeleteBinLine,
+  RiDownloadLine,
+  RiEditLine,
+  RiFileCopyLine,
+  RiMoreLine,
+  RiShareLine,
+} from '@remixicon/react';
+import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { shareUrl } from './share-url';
-import './ui/dropdown-menu.css';
-
-export type FileMenuState = {
-  open: boolean;
-  point?: { x: number; y: number };
-};
 
 export function FileActionMenu({
   name,
@@ -26,7 +35,7 @@ export function FileActionMenu({
   edit,
   remove,
   resetConfirmation,
-  control,
+  renderRow,
   className = 'row-action',
 }: {
   name: string;
@@ -37,44 +46,20 @@ export function FileActionMenu({
   edit: () => void;
   remove: () => boolean;
   resetConfirmation: () => void;
-  control?: { state: FileMenuState; setState: (state: FileMenuState) => void };
+  renderRow?: (trigger: ReactNode) => ReactNode;
   className?: string;
 }) {
-  const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const editAfterClose = useRef(false);
-  const [internalState, setInternalState] = useState<FileMenuState>({
-    open: false,
-  });
-  const [container, setContainer] = useState<HTMLDialogElement | null>(null);
   const [feedback, setFeedback] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const state = control?.state ?? internalState;
-  const setState = control?.setState ?? setInternalState;
-  const { open, point } = state;
-  const virtualAnchor = useMemo(
-    () => ({
-      current: {
-        getBoundingClientRect: () =>
-          point
-            ? new DOMRect(point.x, point.y, 0, 0)
-            : (trigger.current?.getBoundingClientRect() ?? new DOMRect()),
-      },
-    }),
-    [point],
-  );
-
-  function closeMenu() {
-    setState({ ...state, open: false });
-    resetConfirmation();
-  }
-
-  function openButton() {
-    setContainer(trigger.current?.closest('dialog') ?? null);
+  function finishClose(open: boolean) {
+    if (open || !editAfterClose.current) return;
+    editAfterClose.current = false;
     trigger.current?.focus({ preventScroll: true });
-    setState({ open: true });
+    edit();
   }
 
   async function copy(kind: 'link' | 'code') {
@@ -90,115 +75,105 @@ export function FileActionMenu({
     timer.current = setTimeout(() => setFeedback(''), 1800);
   }
 
-  return (
-    <Menu.Root
-      open={open}
-      modal={false}
-      onOpenChange={(next) => {
-        if (!next) closeMenu();
-      }}
-    >
-      <Menu.Anchor virtualRef={virtualAnchor} />
-      <button
-        id={id}
-        ref={trigger}
-        type="button"
-        className={className}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Actions for ${name}`}
-        title={feedback || 'File actions'}
-        disabled={busy}
-        onClick={() => {
-          if (open) closeMenu();
-          else openButton();
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== 'ArrowDown') return;
-          event.preventDefault();
-          openButton();
-        }}
-      >
-        {feedback.endsWith('copied') ? (
-          <Check size={17} aria-hidden="true" />
-        ) : (
-          <Ellipsis size={19} aria-hidden="true" />
-        )}
-      </button>
-      <span className="visually-hidden" role="status">
-        {feedback}
-      </span>
-      <Menu.Portal container={container}>
-        <Menu.Content
-          data-slot="dropdown-menu-content"
-          className="file-command-menu"
-          aria-labelledby={id}
-          align={point ? 'start' : 'end'}
-          sideOffset={point ? 0 : 5}
-          collisionPadding={8}
-          onInteractOutside={(event) => {
-            if (
-              event.target instanceof Node &&
-              trigger.current?.contains(event.target)
-            )
-              event.preventDefault();
-          }}
-          onCloseAutoFocus={(event) => {
-            if (!editAfterClose.current) return;
-            editAfterClose.current = false;
-            event.preventDefault();
-            trigger.current?.focus({ preventScroll: true });
-            edit();
-          }}
-        >
+  function items(context = false) {
+    const Item = context ? ContextMenuItem : DropdownMenuItem;
+    const Group = context ? ContextMenuGroup : DropdownMenuGroup;
+    const Separator = context ? ContextMenuSeparator : DropdownMenuSeparator;
+    return (
+      <>
+        <Group>
           {downloadUrl && (
-            <Menu.Item data-slot="dropdown-menu-item" asChild>
-              <a href={downloadUrl} download className="file-menu-download">
-                <Download size={15} aria-hidden="true" />
-                download
-              </a>
-            </Menu.Item>
+            <Item render={<a href={downloadUrl} download />}>
+              <RiDownloadLine aria-hidden="true" /> download
+            </Item>
           )}
-          <Menu.Item
-            data-slot="dropdown-menu-item"
-            onSelect={() => void copy('link')}
-          >
-            <Share size={15} aria-hidden="true" />
-            share link
-          </Menu.Item>
-          <Menu.Item
-            data-slot="dropdown-menu-item"
-            onSelect={() => void copy('code')}
-          >
-            <Copy size={15} aria-hidden="true" />
-            copy code
-          </Menu.Item>
-          <Menu.Item
-            data-slot="dropdown-menu-item"
-            onSelect={() => {
+          <Item onClick={() => void copy('link')}>
+            <RiShareLine aria-hidden="true" /> share link
+          </Item>
+          <Item onClick={() => void copy('code')}>
+            <RiFileCopyLine aria-hidden="true" /> copy code
+          </Item>
+          <Item
+            onClick={() => {
               editAfterClose.current = true;
             }}
           >
-            <Pencil size={15} aria-hidden="true" />
-            edit code
-          </Menu.Item>
-          <Menu.Separator className="file-command-separator" />
-          <Menu.Item
-            data-slot="dropdown-menu-item"
-            data-variant="destructive"
-            onSelect={(event) => {
-              if (!remove()) event.preventDefault();
-            }}
+            <RiEditLine aria-hidden="true" /> edit code
+          </Item>
+        </Group>
+        <Separator />
+        <Group>
+          <Item
+            variant="destructive"
+            closeOnClick={confirmDelete}
+            onClick={remove}
           >
             {confirmDelete ? (
-              <Check size={15} aria-hidden="true" />
+              <RiCheckLine aria-hidden="true" />
             ) : (
-              <Trash2 size={15} aria-hidden="true" />
+              <RiDeleteBinLine aria-hidden="true" />
             )}
             {confirmDelete ? 'confirm delete' : 'delete file'}
-          </Menu.Item>
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+          </Item>
+        </Group>
+      </>
+    );
+  }
+
+  const menu = (
+    <>
+      <DropdownMenu
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) resetConfirmation();
+        }}
+        onOpenChangeComplete={finishClose}
+      >
+        <DropdownMenuTrigger
+          render={
+            <Button
+              ref={trigger}
+              variant="ghost"
+              size="icon"
+              className={className}
+            />
+          }
+          aria-label={`Actions for ${name}`}
+          title={feedback || 'File actions'}
+          disabled={busy}
+        >
+          {feedback.endsWith('copied') ? (
+            <RiCheckLine aria-hidden="true" />
+          ) : (
+            <RiMoreLine aria-hidden="true" />
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          sideOffset={6}
+          className="w-auto min-w-44"
+        >
+          {items()}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <span className="visually-hidden" role="status">
+        {feedback}
+      </span>
+    </>
+  );
+  if (!renderRow) return menu;
+  return (
+    <ContextMenu
+      onOpenChange={(open, details) => {
+        if (open && busy) details.cancel();
+        if (!open) resetConfirmation();
+      }}
+      onOpenChangeComplete={finishClose}
+    >
+      {renderRow(menu)}
+      <ContextMenuContent className="min-w-44">
+        {items(true)}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

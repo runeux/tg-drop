@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { RiSearchLine } from '@remixicon/react';
+import { Input } from '@/components/ui/input';
 import {
   ActiveFilters,
   LibraryFilters,
@@ -27,8 +28,8 @@ export function LibrarySearch({
     <div className="library-controls">
       <div className="library-search-bar">
         <div className="library-search">
-          <Search size={17} aria-hidden="true" />
-          <input
+          <RiSearchLine size={17} aria-hidden="true" />
+          <Input
             type="search"
             aria-label="Search files"
             placeholder="search"

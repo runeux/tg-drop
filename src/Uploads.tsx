@@ -9,6 +9,7 @@ import Uppy, { type UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
 import { ArrowUpFromLine, LoaderCircle, Settings, X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
 import { z } from 'zod';
 import {
   filesResponseSchema,
@@ -53,6 +54,7 @@ export default function Uploads({
   const [connectionError, setConnectionError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const [sync, setSync] = useState(settings.sync);
   const [startingSync, setStartingSync] = useState(false);
   const [syncRequestError, setSyncRequestError] = useState('');
@@ -432,6 +434,7 @@ export default function Uploads({
           {settings.telegram && (
             <motion.button
               type="button"
+              ref={settingsButton}
               className="row-action settings-trigger"
               aria-label="Settings"
               aria-haspopup="dialog"
@@ -445,15 +448,15 @@ export default function Uploads({
               <Settings size={18} aria-hidden="true" />
             </motion.button>
           )}
-          <motion.button
-            type="button"
+          <Button
+            size="lg"
+            render={<motion.button whileTap={{ scale: 0.96 }} />}
             className="upload-button"
-            whileTap={{ scale: 0.96 }}
             onClick={() => input.current?.click()}
           >
-            <ArrowUpFromLine size={16} aria-hidden="true" />
+            <ArrowUpFromLine data-icon="inline-start" aria-hidden="true" />
             upload
-          </motion.button>
+          </Button>
         </div>
       </header>
       {(error || connectionError) && (
@@ -489,7 +492,10 @@ export default function Uploads({
         }))}
       />
       {settingsOpen && (
-        <SettingsDialog close={() => setSettingsOpen(false)}>
+        <SettingsDialog
+          finalFocus={settingsButton}
+          close={() => setSettingsOpen(false)}
+        >
           <SettingsForm
             settings={settings}
             sourceChats={sourceChats}

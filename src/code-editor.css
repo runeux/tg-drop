@@ -1,35 +1,22 @@
 .code-editor {
   width: min(400px, calc(100% - 32px));
-  padding: 16px;
-  border: 1px solid #ffffff1a;
-  border-radius: 24px;
-  background: var(--bg-secondary);
-  color: var(--label-primary);
-}
-.code-editor::backdrop {
-  background: #0009;
+  gap: 12px;
 }
 .code-editor-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 12px 6px;
-}
-.code-editor-heading h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  justify-content: center;
+  min-height: 28px;
+  padding-inline-end: 40px;
 }
 .code-editor-form {
   display: flex;
   height: 46px;
-  border: 1px solid #ffffff1a;
+  border: 1px solid var(--input);
   border-radius: 12px;
   background: var(--bg-primary);
   transition: border-color 150ms;
 }
 .code-editor-form:focus-within {
-  border-color: #ffffff38;
+  border-color: var(--ring);
 }
 .code-editor-form.has-error {
   border-color: var(--danger);
@@ -38,8 +25,9 @@
   flex: 1 1 auto;
   min-width: 0;
   padding: 0 12px;
+  height: auto;
   border: 0;
-  outline: 0;
+  box-shadow: none;
   background: transparent;
   color: inherit;
   font-family: var(--font-mono);
@@ -54,7 +42,7 @@
   }
 }
 #code-editor-error {
-  margin: 9px 6px 0;
+  margin: 0;
   color: var(--danger);
   font-size: 12px;
 }

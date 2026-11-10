@@ -1,5 +1,14 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
-import { LoaderCircle, RotateCw, X } from 'lucide-react';
+import { useId, useState, type ReactNode, type RefObject } from 'react';
+import { RiLoader4Line, RiRefreshLine } from '@remixicon/react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { FieldDescription, FieldGroup } from '@/components/ui/field';
+import { Separator } from '@/components/ui/separator';
 import {
   workspaceSettingsSchema,
   type SyncStatus,
@@ -14,7 +23,7 @@ import './settings.css';
 export function SyncIndicator() {
   return (
     <>
-      <LoaderCircle size={14} className="spinning" aria-hidden="true" />
+      <RiLoader4Line size={14} className="spinning" aria-hidden="true" />
       re-syncing…
     </>
   );
@@ -22,48 +31,31 @@ export function SyncIndicator() {
 
 export function SettingsDialog({
   close,
+  finalFocus,
   children,
 }: {
   close: () => void;
-  children: React.ReactNode;
+  finalFocus: RefObject<HTMLButtonElement | null>;
+  children: ReactNode;
 }) {
-  const title = useId();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const backdropPress = useRef(false);
-  useLayoutEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
   return (
-    <dialog
-      className="settings-dialog"
-      aria-labelledby={title}
-      ref={dialog}
-      onClose={close}
-      onPointerDown={(event) => {
-        backdropPress.current = event.target === event.currentTarget;
-      }}
-      onClick={(event) => {
-        if (backdropPress.current && event.target === event.currentTarget)
-          close();
+    <Dialog
+      defaultOpen
+      onOpenChangeComplete={(open) => {
+        if (!open) close();
       }}
     >
-      <div className="settings-panel">
-        <header className="settings-header">
-          <h1 id={title}>settings</h1>
-          <button
-            type="button"
-            className="row-action settings-close"
-            aria-label="Close settings"
-            onClick={close}
-          >
-            <X size={17} aria-hidden="true" />
-          </button>
-        </header>
+      <DialogContent
+        className="settings-dialog"
+        closeLabel="Close settings"
+        finalFocus={finalFocus}
+      >
+        <DialogHeader className="settings-header">
+          <DialogTitle>settings</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -149,93 +141,112 @@ export function SettingsForm({
           <p>choose where to keep and find your files</p>
         </div>
       )}
-      <section className="settings-section" aria-label="Sources">
-        <h2 className="source-heading">
-          sources
-          {refreshing && (
-            <span role="status" aria-label="Refreshing chats">
-              <LoaderCircle size={12} className="spinning" aria-hidden="true" />
-            </span>
+      <FieldGroup className="settings-sections">
+        <section className="settings-section" aria-label="Sources">
+          <h2 className="source-heading">
+            sources
+            {refreshing && (
+              <span role="status" aria-label="Refreshing chats">
+                <RiLoader4Line
+                  size={12}
+                  className="spinning"
+                  aria-hidden="true"
+                />
+              </span>
+            )}
+          </h2>
+          <SourceFields
+            sources={sources}
+            chats={[...options.values()]}
+            tags={tags}
+            change={setSources}
+            busy={saving}
+          />
+          {chatError && (
+            <p className="settings-retry" role="alert">
+              {chatError}
+              <Button
+                variant="ghost"
+                type="button"
+                className="settings-quiet"
+                onClick={refresh}
+              >
+                retry
+              </Button>
+            </p>
           )}
-        </h2>
-        <SourceFields
-          sources={sources}
-          chats={[...options.values()]}
-          tags={tags}
-          change={setSources}
-          busy={saving}
-        />
-        {chatError && (
-          <p className="settings-retry" role="alert">
-            {chatError}
-            <button type="button" className="settings-quiet" onClick={refresh}>
-              retry
-            </button>
-          </p>
+        </section>
+        {!setup && (
+          <>
+            <Separator />
+            <section className="settings-section" aria-label="Tags">
+              <h2>tags</h2>
+              <TagFields
+                tags={tags}
+                change={setTags}
+                busy={saving}
+                remove={(id) => {
+                  setTags(tags.filter((tag) => tag.id !== id));
+                  setSources(
+                    sources.map((source) =>
+                      source.tagId === id ? { ...source, tagId: null } : source,
+                    ),
+                  );
+                }}
+              />
+            </section>
+            <Separator />
+            <section className="settings-section" aria-label="Sync">
+              <div className="settings-section-intro">
+                <h2>sync</h2>
+                <FieldDescription>
+                  find missed files and remove entries for files deleted in
+                  telegram.
+                </FieldDescription>
+              </div>
+              <Button
+                variant="secondary"
+                type="button"
+                className="settings-secondary"
+                disabled={sync?.running || saving}
+                aria-busy={sync?.running}
+                onClick={resync}
+              >
+                {sync?.running ? (
+                  <SyncIndicator />
+                ) : (
+                  <>
+                    <RiRefreshLine
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />{' '}
+                    re-sync with telegram
+                  </>
+                )}
+              </Button>
+              {sync?.error && <p role="alert">{sync.error}</p>}
+            </section>
+          </>
         )}
-      </section>
-      {!setup && (
-        <>
-          <section className="settings-section" aria-label="Tags">
-            <h2>tags</h2>
-            <TagFields
-              tags={tags}
-              change={setTags}
-              busy={saving}
-              remove={(id) => {
-                setTags(tags.filter((tag) => tag.id !== id));
-                setSources(
-                  sources.map((source) =>
-                    source.tagId === id ? { ...source, tagId: null } : source,
-                  ),
-                );
-              }}
-            />
-          </section>
-          <section className="settings-section" aria-label="Sync">
-            <div className="settings-section-intro">
-              <h2>sync</h2>
-              <p>
-                find missed files and remove entries for files deleted in
-                telegram.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="settings-secondary"
-              disabled={sync?.running || saving}
-              aria-busy={sync?.running}
-              onClick={resync}
-            >
-              {sync?.running ? (
-                <SyncIndicator />
-              ) : (
-                <>
-                  <RotateCw size={14} aria-hidden="true" /> re-sync with
-                  telegram
-                </>
-              )}
-            </button>
-            {sync?.error && <p role="alert">{sync.error}</p>}
-          </section>
-        </>
-      )}
+      </FieldGroup>
+      <Separator />
       <footer className="settings-footer">
         <div>
           {invalid && <p id={hint}>{invalid}</p>}
           {saveError && <p role="alert">{saveError}</p>}
         </div>
-        <button
+        <Button
           type="submit"
-          className="upload-button"
+          size="lg"
+          className="settings-save"
           disabled={Boolean(invalid) || saving}
           aria-describedby={invalid ? hint : undefined}
         >
           {saving && (
-            <LoaderCircle size={14} className="spinning" aria-hidden="true" />
+            <RiLoader4Line size={14} className="spinning" aria-hidden="true" />
           )}
           {saving ? 'saving…' : setup ? 'continue' : 'save'}
-        </button>
+        </Button>
       </footer>
     </form>
   );

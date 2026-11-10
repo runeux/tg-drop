@@ -190,7 +190,7 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
       name: 'Actions for wide.svg',
     });
     const mobileItem = (name: string) =>
-      viewer.getByRole('menuitem', { name, exact: true });
+      page.getByRole('menuitem', { name, exact: true });
     if (mobile) {
       await expect(viewer.locator('.viewer-code')).toHaveText(
         /^[2-9A-HJ-NP-Z-]{19}$/,
@@ -203,7 +203,7 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
       await mobileActions.tap();
       await expect(mobileItem('share link')).toBeVisible();
       await page.keyboard.press('Escape');
-      await expect(viewer.getByRole('menu')).toHaveCount(0);
+      await expect(page.getByRole('menu')).toHaveCount(0);
       await expect(viewer).toBeVisible();
     }
     if (browserName === 'chromium') {
@@ -269,10 +269,7 @@ test('one list shows square thumbnails and opens the fullscreen viewer', async (
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openWide.click();
-    await expect(viewer.locator('.media-viewer')).toHaveCSS(
-      'transform',
-      'none',
-    );
+    await expect(viewer).toHaveCSS('transform', 'none');
     if (mobile) {
       await mobileActions.tap();
       await mobileItem('delete file').tap();

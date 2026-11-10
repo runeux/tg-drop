@@ -1,15 +1,13 @@
-import { useId, type ReactNode } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import {
-  ItemIndicator,
-  RadioGroup,
-  RadioItem,
-} from '@radix-ui/react-dropdown-menu';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type Option = {
   value: string;
@@ -24,7 +22,7 @@ export function SourcePicker({
   options,
   change,
   disabled,
-  className = '',
+  className,
 }: {
   label: string;
   placeholder: string;
@@ -34,46 +32,41 @@ export function SourcePicker({
   disabled: boolean;
   className?: string;
 }) {
-  const valueId = useId();
   const selected = options.find((option) => option.value === value);
   return (
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        type="button"
-        className={`source-picker ${className}`}
+    <Select
+      items={options}
+      value={selected?.value ?? null}
+      disabled={disabled || !options.length}
+      onValueChange={(next) => {
+        if (next !== null) change(next);
+      }}
+    >
+      <SelectTrigger
+        className={cn('source-picker', className)}
         aria-label={label}
-        aria-describedby={valueId}
-        disabled={disabled || !options.length}
       >
-        <span className="source-picker-value" id={valueId}>
-          {selected?.badge ?? selected?.label ?? placeholder}
-        </span>
-        <ChevronDown size={14} aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        inline
+        <SelectValue className="source-picker-value" placeholder={placeholder}>
+          {selected?.badge ?? selected?.label}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent
         align="start"
-        className="file-command-menu source-picker-menu"
+        alignItemWithTrigger={false}
+        className="source-picker-menu"
       >
-        <RadioGroup value={value} onValueChange={change}>
+        <SelectGroup>
           {options.map((option) => (
-            <RadioItem
+            <SelectItem
               key={option.value}
-              data-slot="dropdown-menu-item"
-              className="source-picker-option"
               value={option.value}
-              textValue={option.label}
+              label={option.label}
             >
-              <span className="source-picker-value">
-                {option.badge ?? option.label}
-              </span>
-              <ItemIndicator asChild>
-                <Check size={14} aria-hidden="true" />
-              </ItemIndicator>
-            </RadioItem>
+              {option.badge ?? <span className="truncate">{option.label}</span>}
+            </SelectItem>
           ))}
-        </RadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }

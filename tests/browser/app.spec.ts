@@ -151,10 +151,20 @@ test('password gate, automatic upload, copy code and repeatable manual downloads
   await expect(
     peek.locator('.peek-file-artwork .file-type-icon'),
   ).toBeVisible();
-  await expect(row.locator('.file-artwork')).toHaveCSS('opacity', '1');
-  await expect(peek.getByRole('link', { name: `Download ${name}` })).toHaveCSS(
-    'border-radius',
-    '10px',
+  await expect(
+    page
+      .locator('.file-row')
+      .filter({ hasText: name })
+      .locator('.file-artwork'),
+  ).toHaveCSS('opacity', '1');
+  await expect(
+    peek.getByRole('link', { name: `Download ${name}` }),
+  ).toBeVisible();
+  await expect(peek).toHaveCSS('background-color', 'oklch(0.205 0 0)');
+  await expect(peek).toHaveCSS('backdrop-filter', 'none');
+  await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCSS(
+    'backdrop-filter',
+    'none',
   );
   await expect(peek.locator('.peek-file-facts')).toHaveCSS('display', 'flex');
   if (browserName === 'chromium') {
@@ -358,7 +368,7 @@ test('dashboard code edits replace the old code and share links wait for a click
   await expect(dialog.locator('form')).toHaveCSS('border-top-width', '1px');
   await expect(dialog.locator('form')).toHaveCSS(
     'border-top-color',
-    'rgb(255, 130, 123)',
+    'oklch(0.704 0.191 22.216)',
   );
   await input.fill('api');
   await input.press('Enter');

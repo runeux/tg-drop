@@ -1,14 +1,16 @@
 import { SlidersHorizontal, X } from 'lucide-react';
-import { Group } from '@radix-ui/react-dropdown-menu';
 import type { Tag } from '../shared/settings';
 import { TagBadge } from './TagBadge';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 
 export type FilterGroup = {
   label: string;
@@ -33,17 +35,15 @@ function FilterSection({ group }: { group: FilterGroup }) {
   }
 
   return (
-    <Group aria-label={label} className="filter-section">
+    <DropdownMenuGroup aria-label={label} className="filter-section">
       <div className="filter-heading">
         <span>{label}</span>
         <DropdownMenuItem
           className="filter-text-action"
           aria-label={`select all ${label}`}
           disabled={!selected}
-          onSelect={(event) => {
-            event.preventDefault();
-            change(null);
-          }}
+          closeOnClick={false}
+          onClick={() => change(null)}
         >
           select all
         </DropdownMenuItem>
@@ -54,7 +54,7 @@ function FilterSection({ group }: { group: FilterGroup }) {
             key={id}
             className={tag ? 'filter-chip filter-chip-colored' : 'filter-chip'}
             checked={selected === null || selected.has(id)}
-            onSelect={(event) => event.preventDefault()}
+            closeOnClick={false}
             onCheckedChange={() => toggle(id)}
           >
             {tag ? <TagBadge tag={tag} /> : label}
@@ -64,7 +64,7 @@ function FilterSection({ group }: { group: FilterGroup }) {
           <span className="filter-empty">no {label} yet</span>
         )}
       </div>
-    </Group>
+    </DropdownMenuGroup>
   );
 }
 
@@ -82,19 +82,20 @@ export function LibraryFilters({ groups }: { groups: FilterGroup[] }) {
         <SlidersHorizontal size={17} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="filter-menu">
-        <div className="filter-heading filter-menu-heading">
+        <DropdownMenuGroup className="filter-heading filter-menu-heading">
           <span>filters</span>
           <DropdownMenuItem
             className="filter-text-action"
             disabled={!active}
-            onSelect={(event) => {
-              event.preventDefault();
+            closeOnClick={false}
+            onClick={() => {
               for (const group of groups) group.change(null);
             }}
           >
             clear filters
           </DropdownMenuItem>
-        </div>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
         {groups.map((group) => (
           <FilterSection key={group.label} group={group} />
         ))}
@@ -118,8 +119,9 @@ export function ActiveFilters({ groups }: { groups: FilterGroup[] }) {
           ...(extra > 0 ? [`+${extra}`] : []),
         ].join(', ');
         return (
-          <button
-            type="button"
+          <Badge
+            variant="secondary"
+            render={<button type="button" />}
             key={label}
             className="active-filter"
             aria-label={`Clear ${label} filter`}
@@ -127,7 +129,7 @@ export function ActiveFilters({ groups }: { groups: FilterGroup[] }) {
           >
             <span title={names.join(', ')}>{summary}</span>
             <X size={12} aria-hidden="true" />
-          </button>
+          </Badge>
         );
       })}
     </div>

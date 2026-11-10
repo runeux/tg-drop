@@ -85,6 +85,14 @@ export function Library({
         file.code.toLowerCase().includes(query)),
   );
 
+  const codeEditor = editing && (
+    <CodeEditor
+      file={editing}
+      close={() => setEditing(null)}
+      save={(code) => changeCode(editing.id, code)}
+    />
+  );
+
   return (
     <div className="library">
       <LibrarySearch changeQuery={setQuery} groups={groups} />
@@ -113,15 +121,11 @@ export function Library({
           close={() => setSelection(null)}
           remove={() => remove(preview.id)}
           editCode={setEditing}
-        />
+        >
+          {codeEditor}
+        </FilePeek>
       )}
-      {editing && (
-        <CodeEditor
-          file={editing}
-          close={() => setEditing(null)}
-          save={(code) => changeCode(editing.id, code)}
-        />
-      )}
+      {!preview && codeEditor}
     </div>
   );
 }
