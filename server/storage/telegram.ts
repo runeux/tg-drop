@@ -1,6 +1,6 @@
 import { Photo, RawDocument, TelegramClient } from '@mtcute/node';
 import { captionWithCode } from '../telegram-sync.js';
-import { TELEGRAM_CHAT_ID } from '../telegram-chat.js';
+import { telegramKey, telegramLocation } from '../telegram-chat.js';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { Config } from '../config.js';
@@ -43,10 +43,12 @@ export class TelegramStorage implements FileStorage {
     file: FileRecord,
     progress: (percent: number) => void,
   ) {
+    const peerId = file.sourceId;
+    if (!peerId) throw new Error('Choose a Telegram source for uploads.');
     const marker = `tg-drop · ${file.id}`;
     const caption = captionWithCode({ text: marker }, file.code);
     const existing = await this.client.searchMessages({
-      chatId: TELEGRAM_CHAT_ID,
+      chatId: peerId,
       query: file.id,
       limit: 1,
     });
@@ -59,14 +61,14 @@ export class TelegramStorage implements FileStorage {
       const annotated = captionWithCode(original, file.code);
       if (annotated !== original)
         await this.client.editMessage({
-          chatId: TELEGRAM_CHAT_ID,
+          chatId: peerId,
           message: stored.id,
           text: annotated,
         });
-      return String(stored.id);
+      return telegramKey(peerId, stored.id);
     }
     const message = await this.client.sendMedia(
-      TELEGRAM_CHAT_ID,
+      peerId,
       {
         type: 'document',
         file: `file:${path}`,
@@ -80,15 +82,13 @@ export class TelegramStorage implements FileStorage {
           progress(total ? Math.round((uploaded / total) * 100) : 0),
       },
     );
-    return String(message.id);
+    return telegramKey(peerId, message.id);
   }
 
   async open(key: string, range?: ByteRange) {
     // resolve the message each time so telegram file references stay fresh.
-    const [message] = await this.client.getMessages(
-      TELEGRAM_CHAT_ID,
-      Number(key),
-    );
+    const { peerId, messageId } = telegramLocation(key);
+    const [message] = await this.client.getMessages(peerId, messageId);
     if (!(
       message?.media instanceof RawDocument || message?.media instanceof Photo
     ))
@@ -124,9 +124,10 @@ export class TelegramStorage implements FileStorage {
   }
 
   async remove(key: string) {
-    const messages = (
-      await this.client.getMessages(TELEGRAM_CHAT_ID, Number(key))
-    ).filter((message) => message !== null);
+    const { peerId, messageId } = telegramLocation(key);
+    const messages = (await this.client.getMessages(peerId, messageId)).filter(
+      (message) => message !== null,
+    );
     if (messages.length)
       await this.client.deleteMessages(messages, { revoke: true });
   }

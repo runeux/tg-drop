@@ -7,7 +7,7 @@ import {
 } from 'react';
 import Uppy, { type UppyFile } from '@uppy/core';
 import XHRUpload from '@uppy/xhr-upload';
-import { ArrowUpFromLine, LoaderCircle, X } from 'lucide-react';
+import { ArrowUpFromLine, LoaderCircle, Settings, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { z } from 'zod';
 import {
@@ -18,6 +18,12 @@ import {
 import { api, ApiError, message, okSchema } from './api';
 import { Library } from './Library';
 import { validateFile } from './selection';
+import { syncStatusSchema, type WorkspaceSettings } from '../shared/settings';
+import {
+  SettingsDialog,
+  SettingsForm,
+  SyncIndicator,
+} from './WorkspaceSettings';
 
 type UploadMeta = { uploadId: string; createdAt: number; order: number };
 type UploadBody = { id: string };
@@ -29,16 +35,24 @@ export default function Uploads({
   pendingFiles,
   onPendingReceived,
   onUnauthorized,
+  settings,
+  settingsSaved,
 }: {
   maxFileBytes: number;
   pendingFiles: File[];
   onPendingReceived: () => void;
   onUnauthorized: () => void;
+  settings: WorkspaceSettings;
+  settingsSaved: (settings: WorkspaceSettings) => void;
 }) {
   const [files, setFiles] = useState<ListedFile[]>([]);
   const [error, setError] = useState('');
   const [connectionError, setConnectionError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sync, setSync] = useState(settings.sync);
+  const [startingSync, setStartingSync] = useState(false);
+  const [syncRequestError, setSyncRequestError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const sequence = useRef(0);
   const active = useRef(false);
@@ -128,6 +142,7 @@ export default function Uploads({
                   file.createdAt * 1000,
               }));
             });
+            if (result.sync) setSync(result.sync);
             setLoaded(true);
             setConnectionError('');
           })
@@ -321,6 +336,34 @@ export default function Uploads({
     }
   }
 
+  async function resync() {
+    if (sync.running || startingSync) return;
+    setStartingSync(true);
+    setSyncRequestError('');
+    try {
+      const status = await api('/settings/sync', syncStatusSchema, {
+        method: 'POST',
+      });
+      mutationVersion.current++;
+      setSync(status);
+      void refresh();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onUnauthorized();
+      else setSyncRequestError(message(error));
+    } finally {
+      setStartingSync(false);
+    }
+  }
+
+  function saveSettings(value: WorkspaceSettings) {
+    mutationVersion.current++;
+    settingsSaved(value);
+    setSync(value.sync);
+    setSyncRequestError('');
+    setSettingsOpen(false);
+    void refresh();
+  }
+
   const entries = new Map(files.map((entry) => [entry.file.id, entry]));
   for (const local of localFiles) {
     if (entries.has(local.meta.uploadId)) continue;
@@ -368,22 +411,44 @@ export default function Uploads({
       />
       <header className="upload-header">
         <div>
-          <h1>files</h1>
+          <div className="upload-title">
+            <h1>files</h1>
+            {(sync.running || startingSync) && (
+              <span className="sync-indicator" role="status">
+                <SyncIndicator />
+              </span>
+            )}
+          </div>
           <p>
             {listedFiles.length} {listedFiles.length === 1 ? 'file' : 'files'}
             {' ・ '}
             {formatSize(totalBytes)}
           </p>
         </div>
-        <motion.button
-          type="button"
-          className="upload-button"
-          whileTap={{ scale: 0.96 }}
-          onClick={() => input.current?.click()}
-        >
-          <ArrowUpFromLine size={16} aria-hidden="true" />
-          upload
-        </motion.button>
+        <div className="upload-actions">
+          {settings.telegram && (
+            <motion.button
+              type="button"
+              className="row-action settings-trigger"
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              title="Settings"
+              whileTap={{ scale: 0.93 }}
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings size={18} aria-hidden="true" />
+            </motion.button>
+          )}
+          <motion.button
+            type="button"
+            className="upload-button"
+            whileTap={{ scale: 0.96 }}
+            onClick={() => input.current?.click()}
+          >
+            <ArrowUpFromLine size={16} aria-hidden="true" />
+            upload
+          </motion.button>
+        </div>
       </header>
       {(error || connectionError) && (
         <p className="workspace-error" role="alert">
@@ -417,6 +482,20 @@ export default function Uploads({
           retry: local ? () => retryLocal(local) : () => retry(file.id),
         }))}
       />
+      {settingsOpen && (
+        <SettingsDialog close={() => setSettingsOpen(false)}>
+          <SettingsForm
+            settings={settings}
+            sync={{
+              running: sync.running || startingSync,
+              error: syncRequestError || sync.error,
+            }}
+            resync={() => void resync()}
+            saved={saveSettings}
+            onUnauthorized={onUnauthorized}
+          />
+        </SettingsDialog>
+      )}
       {!loaded && !error && !connectionError && (
         <div className="list-loading" aria-label="Loading files">
           <LoaderCircle size={18} className="spinning" />

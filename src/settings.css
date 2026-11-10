@@ -1,0 +1,234 @@
+.upload-actions,
+.upload-title,
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.upload-title {
+  flex-wrap: wrap;
+  gap: 3px 9px;
+}
+.upload-actions {
+  flex-shrink: 0;
+  gap: 5px;
+}
+.row-action.settings-trigger,
+.row-action.filter-trigger {
+  width: 44px;
+  height: 44px;
+}
+.sync-indicator {
+  gap: 5px;
+  color: #e9c66a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sync-indicator svg,
+.settings-secondary svg {
+  flex-shrink: 0;
+}
+
+.settings-dialog {
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid #ffffff18;
+  border-radius: 17px;
+  background: var(--bg-secondary);
+  color: var(--label-primary);
+  box-shadow: 0 18px 65px #0009;
+  overscroll-behavior: contain;
+}
+.settings-dialog::backdrop {
+  background: #0009;
+}
+.settings-panel {
+  padding: 14px 22px 20px;
+}
+.settings-setup {
+  width: min(100%, 412px);
+  margin: clamp(24px, 12vh, 132px) auto 0;
+}
+.settings-form h1 {
+  margin: 4px 0 0;
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.settings-form p {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 7px 0 0;
+  color: var(--label-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.settings-form p[role='alert'] {
+  color: var(--danger);
+}
+.settings-section {
+  margin-top: 20px;
+}
+.settings-section h2 {
+  margin: 0 0 7px;
+  color: var(--label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.settings-quiet,
+.settings-secondary {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--label-secondary);
+  font-size: 13px;
+}
+.settings-back {
+  margin: -3px 0 8px -7px;
+  font-size: 12px;
+}
+.settings-back kbd {
+  margin-left: 2px;
+}
+.settings-secondary {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  background: var(--fill-secondary);
+}
+.settings-secondary:disabled,
+.settings-quiet:disabled,
+.settings-footer button:disabled {
+  opacity: 0.45;
+}
+.settings-secondary[aria-busy='true'] {
+  opacity: 1;
+}
+.source-fields,
+.tag-fields {
+  display: grid;
+  gap: 5px;
+}
+.tag-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.source-field,
+.tag-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.source-field select,
+.tag-field input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #ffffff15;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+.source-field select + select {
+  flex: 0 1 28%;
+}
+.source-field .row-action,
+.tag-field .row-action {
+  flex-shrink: 0;
+}
+.tag-color-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #ffffff15;
+  border-radius: 8px;
+  background: transparent;
+}
+.tag-color-button span,
+.tag-palette button {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+}
+.tag-palette {
+  position-area: block-end span-inline-end;
+  margin: 5px 0;
+  padding: 8px;
+  border: 1px solid #ffffff20;
+  border-radius: 10px;
+  background: var(--fill-secondary);
+  box-shadow: 0 8px 28px #0008;
+}
+.tag-palette:popover-open {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+}
+.tag-palette button {
+  width: 24px;
+  height: 24px;
+}
+.tag-palette button[aria-pressed='true'] {
+  outline: 1px solid var(--label-primary);
+  outline-offset: 1px;
+}
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+.settings-footer button {
+  flex-shrink: 0;
+}
+.settings-footer p {
+  margin: 0;
+}
+
+@media (hover: hover) {
+  .settings-quiet:hover:not(:disabled),
+  .settings-secondary:hover:not(:disabled) {
+    color: var(--label-primary);
+  }
+}
+@media (pointer: coarse) {
+  .settings-quiet,
+  .settings-secondary,
+  .settings-section .row-action,
+  .tag-color-button,
+  .source-field select,
+  .tag-field input {
+    min-height: 44px;
+  }
+  .tag-field input,
+  .source-field select {
+    font-size: 16px;
+  }
+  .tag-palette button {
+    width: 40px;
+    height: 40px;
+  }
+}
+@media (max-width: 365px) {
+  .tag-palette:popover-open {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

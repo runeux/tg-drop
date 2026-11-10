@@ -4,12 +4,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { telegramClient, TelegramStorage } from '../server/storage/telegram.js';
-import { TELEGRAM_CHAT_ID } from '../server/telegram-chat.js';
+import { telegramKey } from '../server/telegram-chat.js';
 import type { FileRecord } from '../server/database.js';
 import { Long, Message, PeersIndex } from '@mtcute/node';
 import { telegramSyncPort } from '../server/telegram-sync.js';
 
-test('uploads, downloads and removal only address the private channel', async (t) => {
+const channelId = -1000000000042;
+const savedId = 123;
+
+test('uploads, downloads and removal use the source from the file location', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tg-drop-channel-'));
   const client = telegramClient({
     TG_API_ID: 1,
@@ -26,6 +29,7 @@ test('uploads, downloads and removal only address the private channel', async (t
     createdAt: 1,
     status: 'storing',
     storageKey: null,
+    sourceId: channelId,
   };
   const sent = new Error('upload reached channel');
   const search = t.mock.method(client, 'searchMessages', async () => []);
@@ -39,13 +43,17 @@ test('uploads, downloads and removal only address the private channel', async (t
       storage.put('/test.txt', file, () => {}),
       sent,
     );
-    assert.equal(search.mock.calls[0]?.arguments[0]?.chatId, TELEGRAM_CHAT_ID);
-    assert.equal(send.mock.calls[0]?.arguments[0], TELEGRAM_CHAT_ID);
-    await assert.rejects(storage.open('12'), /stored file is unavailable/);
-    await storage.remove('12');
+    assert.equal(search.mock.calls[0]?.arguments[0]?.chatId, channelId);
+    assert.equal(send.mock.calls[0]?.arguments[0], channelId);
+    await assert.rejects(
+      storage.open(telegramKey(savedId, 12)),
+      /stored file is unavailable/,
+    );
+    await storage.remove(telegramKey(channelId, 12));
     assert.equal(get.mock.calls.length, 2);
+    assert.equal(get.mock.calls[0]?.arguments[0], savedId);
+    assert.equal(get.mock.calls[1]?.arguments[0], channelId);
     for (const call of get.mock.calls) {
-      assert.equal(call.arguments[0], TELEGRAM_CHAT_ID);
       assert.equal(call.arguments[1], 12);
     }
     assert.equal(remove.mock.calls.length, 0);
@@ -55,7 +63,7 @@ test('uploads, downloads and removal only address the private channel', async (t
   }
 });
 
-test('history and live sync accept channel files and ignore saved messages', async (t) => {
+test('history and live events keep channel and saved messages separate', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tg-drop-channel-sync-'));
   const client = telegramClient({
     TG_API_ID: 1,
@@ -67,7 +75,7 @@ test('history and live sync accept channel files and ignore saved messages', asy
     chats: [
       {
         _: 'channelForbidden',
-        id: 4304384450,
+        id: 42,
         accessHash: Long.ZERO,
         title: 'files',
         broadcast: true,
@@ -80,7 +88,7 @@ test('history and live sync accept channel files and ignore saved messages', asy
         _: 'message',
         id: 12,
         peerId: channel
-          ? { _: 'peerChannel', channelId: 4304384450 }
+          ? { _: 'peerChannel', channelId: 42 }
           : { _: 'peerUser', userId: 123 },
         date: 1,
         message: 'notes',
@@ -115,23 +123,23 @@ test('history and live sync accept channel files and ignore saved messages', asy
   const port = telegramSyncPort(client);
   try {
     const files = [];
-    for await (const file of port.history()) files.push(file);
-    assert.equal(history.mock.calls[0]?.arguments[0], TELEGRAM_CHAT_ID);
+    for await (const file of port.history(channelId)) files.push(file);
+    assert.equal(history.mock.calls[0]?.arguments[0], channelId);
     assert.equal(files.length, 1);
     assert.equal(files[0]?.name, 'notes.txt');
     const live: number[] = [];
-    const stop = port.subscribe((file) => live.push(file.id));
+    const stop = port.subscribe((file) => live.push(file.peerId));
     const listener = subscribe.mock.calls[0]?.arguments[0];
     assert.ok(listener);
     listener(saved);
     listener(channel);
-    assert.deepEqual(live, [12]);
+    assert.deepEqual(live, [savedId, channelId]);
     stop();
     assert.equal(unsubscribe.mock.calls.length, 1);
-    await port.edit(12, { text: 'code' });
+    await port.edit(channelId, 12, { text: 'code' });
     const request = edit.mock.calls[0]?.arguments[0];
     assert.ok(request && 'chatId' in request);
-    assert.equal(request.chatId, TELEGRAM_CHAT_ID);
+    assert.equal(request.chatId, channelId);
   } finally {
     await client.destroy();
     await rm(directory, { recursive: true, force: true });

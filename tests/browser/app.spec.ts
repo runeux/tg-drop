@@ -449,12 +449,13 @@ test('library search combines filename, code and type filters', async ({
   await expect(page.getByRole('tablist')).toHaveCount(0);
 
   const search = page.getByRole('searchbox', { name: 'Search files' });
-  const typeFilter = page.getByRole('button', { name: 'any type' });
+  const typeFilter = page.getByRole('button', { name: 'Filters' });
   const menu = page.getByRole('menu');
-  const all = menu.getByRole('menuitemcheckbox', { name: 'all', exact: true });
+  const types = menu.getByRole('group', { name: 'file types' });
+  const all = types.getByRole('menuitem', { name: 'select all file types' });
   await typeFilter.click();
-  await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(1);
-  await expect(all).toHaveAttribute('aria-checked', 'true');
+  await expect(types.getByRole('menuitemcheckbox')).toHaveCount(0);
+  await expect(all).toBeDisabled();
   await page.keyboard.press('Escape');
 
   await page.getByLabel('Choose files').setInputFiles([
@@ -491,31 +492,39 @@ test('library search combines filename, code and type filters', async ({
   await expect(rows).toHaveCount(1);
 
   await typeFilter.click();
-  const pdfType = menu.getByRole('menuitemcheckbox', { name: 'pdf 1' });
+  const pdfType = types.getByRole('menuitemcheckbox', {
+    name: 'pdf',
+    exact: true,
+  });
+  const txtType = types.getByRole('menuitemcheckbox', {
+    name: 'txt',
+    exact: true,
+  });
+  await expect(txtType).toHaveAttribute('aria-checked', 'true');
   await expect(
-    menu.getByRole('menuitemcheckbox', { name: 'txt 2' }),
-  ).toHaveAttribute('aria-checked', 'true');
-  await expect(
-    menu.getByRole('menuitemcheckbox', { name: 'no extension 1' }),
+    types.getByRole('menuitemcheckbox', { name: 'no extension' }),
   ).toBeVisible();
   await expect(
-    menu.getByRole('menuitemcheckbox', { name: 'svg 1' }),
+    types.getByRole('menuitemcheckbox', { name: 'svg' }),
   ).toBeVisible();
-  await expect(menu.getByRole('menuitemcheckbox')).toHaveCount(5);
-  await pdfType.click();
-  await expect(all).toHaveAttribute('aria-checked', 'false');
+  await expect(types.getByRole('menuitemcheckbox')).toHaveCount(4);
+  await txtType.click();
+  await expect(all).toBeEnabled();
   await expect(pdfType).toHaveAttribute('aria-checked', 'false');
+  await expect(txtType).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByText('no matching files')).toBeVisible();
   await all.click();
-  await expect(all).toHaveAttribute('aria-checked', 'true');
+  await expect(all).toBeDisabled();
   await expect(pdfType).toHaveAttribute('aria-checked', 'true');
   await expect(pdf).toBeVisible();
 
   await pdfType.click();
   await page.keyboard.press('Escape');
   await search.fill('');
-  await expect(rows).toHaveCount(4);
-  await expect(pdf).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
+  await expect(pdf).toBeVisible();
+  await page.getByRole('button', { name: 'Clear file types filter' }).click();
+  await expect(rows).toHaveCount(5);
   await expect(
     page.getByRole('button', { name: 'Open preview for diagram.svg' }),
   ).toBeVisible();

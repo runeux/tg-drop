@@ -1,6 +1,5 @@
 import type { ComponentProps } from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
-import { Check } from 'lucide-react';
 import './dropdown-menu.css';
 
 // shadcn/ui's new york dropdown menu, styled with the app's css.
@@ -37,21 +36,4 @@ export function DropdownMenuItem({
   );
 }
 
-export function DropdownMenuCheckboxItem({
-  children,
-  ...props
-}: ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
-  return (
-    <DropdownMenuPrimitive.CheckboxItem
-      data-slot="dropdown-menu-checkbox-item"
-      {...props}
-    >
-      <span className="dropdown-menu-checkbox" aria-hidden="true">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <Check size={12} />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenuPrimitive.CheckboxItem>
-  );
-}
+export const DropdownMenuCheckboxItem = DropdownMenuPrimitive.CheckboxItem;

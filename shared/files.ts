@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { syncStatusSchema, tagSchema } from './settings.js';
 
 export const fileSchema = z.object({
   id: z.string(),
@@ -11,10 +12,14 @@ export const fileSchema = z.object({
   createdAt: z.number(),
   status: z.enum(['queued', 'storing', 'ready', 'failed']),
   progress: z.number(),
+  tag: tagSchema.optional(),
 });
 
 export type DropFile = z.infer<typeof fileSchema>;
-export const filesResponseSchema = z.object({ files: z.array(fileSchema) });
+export const filesResponseSchema = z.object({
+  files: z.array(fileSchema),
+  sync: syncStatusSchema.optional(),
+});
 export const downloadSchema = z.object({
   name: z.string(),
   size: z.number(),

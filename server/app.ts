@@ -21,6 +21,8 @@ import {
 import type { Config } from './config.js';
 import type { Files } from './files.js';
 import type { FileRecord } from './database.js';
+import { saveSettingsSchema } from '../shared/settings.js';
+import { saveSourceSettings, type TelegramSources } from './source-settings.js';
 
 const SESSION_COOKIE = 'drop_session';
 // browsers cap persistent cookies at 400 days; active sessions renew this window.
@@ -37,7 +39,7 @@ export function createApp(
   config: Config,
   files: Files,
   serveClient = true,
-  onCodeChange?: (file: FileRecord, code: string) => void,
+  telegram?: TelegramSources,
 ) {
   const app = new Hono<{ Bindings: HttpBindings }>();
   const sessionDigest = (token: string) =>
@@ -251,11 +253,40 @@ export function createApp(
     return sendFile(c, file.id);
   });
 
-  app.use('/api/files/*', async (c, next) => {
+  const requireSession = async (c: AppContext, next: () => Promise<void>) => {
     if (!authenticated(c)) throw new HttpError(401, 'Sign in again.');
     await next();
+  };
+  app.use('/api/settings/*', requireSession);
+  const workspaceSettings = () => ({
+    ...files.db.readSettings(),
+    telegram: Boolean(telegram),
+    sync: telegram?.sync.status ?? { running: false, error: null },
   });
-  app.get('/api/files', (c) => c.json({ files: files.list() }));
+  app.get('/api/settings', (c) => c.json(workspaceSettings()));
+  app.get('/api/settings/chats', async (c) => {
+    if (!telegram) throw new HttpError(409, 'Telegram storage is disabled.');
+    return c.json({ chats: await telegram.chats() });
+  });
+  app.put('/api/settings', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    if (!telegram) throw new HttpError(409, 'Telegram storage is disabled.');
+    await saveSourceSettings(
+      files,
+      telegram,
+      saveSettingsSchema.parse(await c.req.json()),
+    );
+    return c.json(workspaceSettings());
+  });
+  app.post('/api/settings/sync', (c) => {
+    if (!telegram) throw new HttpError(409, 'Telegram storage is disabled.');
+    if (!files.db.readSettings().sources.length)
+      throw new HttpError(409, 'Add a Telegram source before re-syncing.');
+    return c.json(telegram.sync.resync(), 202);
+  });
+  app.use('/api/files/*', requireSession);
+  app.get('/api/files', (c) =>
+    c.json({ files: files.list(), sync: telegram?.sync.status }),
+  );
   app.patch('/api/files/:id/code', bodyLimit({ maxSize: 4096 }), async (c) => {
     const { code: value } = z
       .object({ code: z.string() })
@@ -271,8 +302,18 @@ export function createApp(
       )
     )
       throw new HttpError(409, 'That code is reserved.');
-    const file = files.db.changeCode(c.req.param('id'), code);
-    if (file.code !== code) onCodeChange?.(file, code);
+    const { id } = files.ready(c.req.param('id'));
+    const file = files.db.changeCode(id, code);
+    if (telegram && file.storageKey && file.code !== code) {
+      void telegram.sync
+        .updateCode(file.storageKey, file.code, code)
+        .catch((error: unknown) =>
+          console.error(
+            'telegram caption sync failed',
+            error instanceof Error ? error.message : 'unknown',
+          ),
+        );
+    }
     return c.json({ code });
   });
   app.on(['GET', 'HEAD'], '/api/files/:id/preview', (c) =>

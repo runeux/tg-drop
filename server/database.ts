@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { DropFile } from '../shared/files.js';
 import { generateCode, normalizeGeneratedCode } from './security.js';
 import { HttpError } from './errors.js';
+import { settingsSchema, type Settings } from '../shared/settings.js';
 
 const files = sqliteTable('files', {
   id: text().primaryKey(),
@@ -17,6 +18,7 @@ const files = sqliteTable('files', {
   createdAt: integer().notNull(),
   status: text().$type<DropFile['status'] | 'deleting'>().notNull(),
   storageKey: text(),
+  sourceId: integer(),
   width: integer(),
   height: integer(),
 });
@@ -25,7 +27,11 @@ const sessions = sqliteTable('sessions', {
   digest: text().primaryKey(),
 });
 
-export type FileRecord = Omit<typeof files.$inferSelect, 'width' | 'height'> & {
+export type FileRecord = Omit<
+  typeof files.$inferSelect,
+  'width' | 'height' | 'sourceId'
+> & {
+  sourceId?: number | null;
   width?: number | null;
   height?: number | null;
 };
@@ -45,7 +51,7 @@ export class FileDatabase {
       createdAt INTEGER NOT NULL, status TEXT NOT NULL,
       storageKey TEXT
     );`);
-    for (const column of ['width', 'height']) {
+    for (const column of ['width', 'height', 'sourceId']) {
       if (
         !this.sqlite
           .prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?')
@@ -68,6 +74,9 @@ export class FileDatabase {
     );
     this.sqlite.exec(
       'CREATE TABLE IF NOT EXISTS sessions (digest TEXT PRIMARY KEY)',
+    );
+    this.sqlite.exec(
+      'CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL)',
     );
     this.authLimiter = new AuthLimiter(this.sqlite);
     this.db = drizzle(this.sqlite);
@@ -105,6 +114,64 @@ export class FileDatabase {
       .set({ status: 'queued' })
       .where(eq(files.status, 'storing'))
       .run();
+  }
+
+  migrateTelegramKeys() {
+    // attribute old message-only keys to the channel used before sources existed.
+    this.sqlite
+      .prepare(
+        `
+      UPDATE files
+      SET sourceId = @source, storageKey = CAST(@source AS INTEGER) || ':' || storageKey
+      WHERE sourceId IS NULL AND storageKey <> '' AND storageKey NOT GLOB '*[^0-9]*'
+    `,
+      )
+      .run({ source: -1004304384450 });
+  }
+
+  readSettings(): Settings {
+    const row = this.sqlite
+      .prepare<[], { value: string }>('SELECT value FROM settings WHERE id = 1')
+      .get();
+    return row
+      ? settingsSchema.parse(JSON.parse(row.value))
+      : { sources: [], tags: [] };
+  }
+
+  saveSettings(settings: Settings) {
+    this.sqlite
+      .prepare('INSERT OR REPLACE INTO settings (id, value) VALUES (1, ?)')
+      .run(JSON.stringify(settings));
+  }
+
+  storedInSource(sourceId: number) {
+    return this.db
+      .select({ id: files.id, key: files.storageKey })
+      .from(files)
+      .where(
+        and(
+          eq(files.sourceId, sourceId),
+          inArray(files.status, ['ready', 'deleting']),
+        ),
+      )
+      .all();
+  }
+
+  pruneMissing(candidates: { id: string; key: string }[]) {
+    this.sqlite.transaction(() => {
+      for (const { id, key } of candidates) {
+        this.db
+          .delete(files)
+          .where(
+            and(
+              eq(files.id, id),
+              eq(files.storageKey, key),
+              eq(files.status, 'ready'),
+            ),
+          )
+          .run();
+      }
+    })();
   }
 
   createSession(digest: string) {
@@ -172,7 +239,10 @@ export class FileDatabase {
   update(
     id: string,
     values: Partial<
-      Pick<FileRecord, 'status' | 'storageKey' | 'width' | 'height'>
+      Pick<
+        FileRecord,
+        'status' | 'storageKey' | 'sourceId' | 'width' | 'height'
+      >
     >,
   ) {
     this.db.update(files).set(values).where(eq(files.id, id)).run();

@@ -13,7 +13,9 @@ import {
 } from '../server/telegram-sync.js';
 import { FileDatabase } from '../server/database.js';
 import { TelegramStorage } from '../server/storage/telegram.js';
-import { TELEGRAM_CHAT_ID } from '../server/telegram-chat.js';
+import { telegramKey } from '../server/telegram-chat.js';
+
+const TELEGRAM_CHAT_ID = -1000000000042;
 
 const channelId = -TELEGRAM_CHAT_ID - 1_000_000_000_000;
 const peers = PeersIndex.from({
@@ -117,7 +119,7 @@ test('history and live sync accept album photos and videos with correct metadata
     },
   });
   const history = [];
-  for await (const file of port.history()) history.push(file);
+  for await (const file of port.history(TELEGRAM_CHAT_ID)) history.push(file);
   assert.deepEqual(
     history.slice(0, 5).map(({ width, height }) => [width, height]),
     Array.from({ length: 5 }, () => [1280, 720]),
@@ -142,6 +144,10 @@ test('history and live sync accept album photos and videos with correct metadata
 
   const directory = await mkdtemp(join(tmpdir(), 'tg-drop-media-'));
   const db = new FileDatabase(directory);
+  db.saveSettings({
+    sources: [{ id: TELEGRAM_CHAT_ID, title: 'storage', tagId: null }],
+    tags: [],
+  });
   const sync = new TelegramSync({ ...port, async edit() {} }, db);
   try {
     for (const file of history) await sync.import(file);
@@ -189,22 +195,31 @@ test('storage streams photos and videos and rejects unavailable media', async ()
       async destroy() {},
     });
     if (!media) {
-      await assert.rejects(storage.open('1'), /stored file is unavailable/);
+      await assert.rejects(
+        storage.open(telegramKey(TELEGRAM_CHAT_ID, 1)),
+        /stored file is unavailable/,
+      );
       continue;
     }
-    const stream = await storage.open('1');
+    const stream = await storage.open(telegramKey(TELEGRAM_CHAT_ID, 1));
     assert.equal(
       Buffer.concat(await stream.toArray()).toString(),
       bytes.toString(),
     );
-    const partial = await storage.open('1', { start: 4099, end: 4105 });
+    const partial = await storage.open(telegramKey(TELEGRAM_CHAT_ID, 1), {
+      start: 4099,
+      end: 4105,
+    });
     assert.equal(offset, 4096);
     assert.deepEqual(
       Buffer.concat(await partial.toArray()),
       bytes.subarray(4099, 4106),
     );
     assert.equal(source?.destroyed, true);
-    const cancelled = await storage.open('1', { start: 0, end: 3 });
+    const cancelled = await storage.open(telegramKey(TELEGRAM_CHAT_ID, 1), {
+      start: 0,
+      end: 3,
+    });
     cancelled.destroy();
     await new Promise<void>((resolve) => cancelled.once('close', resolve));
     assert.equal(source?.destroyed, true);

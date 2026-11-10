@@ -8,6 +8,7 @@ import { Files } from './files.js';
 import { LocalStorage } from './storage/local.js';
 import { telegramClient, TelegramStorage } from './storage/telegram.js';
 import { TelegramSync, telegramSyncPort } from './telegram-sync.js';
+import { listTelegramChats } from './telegram-chat.js';
 
 const config = readConfig();
 await mkdir(config.DATA_DIR, { recursive: true, mode: 0o700 });
@@ -34,17 +35,12 @@ const sync = client
   ? new TelegramSync(telegramSyncPort(client), files.db)
   : null;
 sync?.start();
-const app = createApp(config, files, true, (file, code) => {
-  if (!sync || !file.storageKey) return;
-  void sync
-    .updateCode(Number(file.storageKey), file.code, code)
-    .catch((error: unknown) =>
-      console.error(
-        'telegram caption sync failed',
-        error instanceof Error ? error.message : 'unknown',
-      ),
-    );
-});
+const app = createApp(
+  config,
+  files,
+  true,
+  client && sync ? { chats: () => listTelegramChats(client), sync } : undefined,
+);
 const server = serve(
   { fetch: app.fetch, hostname: config.HOST, port: config.PORT },
   ({ port }) => console.log(`drop listening on ${config.HOST}:${port}`),

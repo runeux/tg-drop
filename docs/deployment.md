@@ -1,6 +1,6 @@
 # deployment
 
-react + uppy → hono → sqlite/drizzle + p-queue → mtcute → telegram private channel. caddy terminates https.
+react + uppy → hono → sqlite/drizzle + p-queue → mtcute → telegram sources. caddy terminates https.
 
 the custom service keeps the two-action interface and code-based access small. teledrive's drive dashboard and filesystem model are unnecessary for this flow.
 
@@ -53,15 +53,15 @@ journalctl -u tg-drop.service -n 100
 
 ## behavior
 
-- the sole storage/sync chat is private channel `4304384450` (telegram peer `-1004304384450`), set in `server/telegram-chat.ts`. the telegram account must have access and permission to post/edit/delete. saved messages are never scanned or accessed.
+- choose at least one source after signing in. the picker lists chats the telegram account administers and can post to, plus saved messages. uploads go to the first source. when upgrading, select the previously configured channel to keep its existing share codes.
 - when switching from saved messages, stop the service and clear the `files` table before starting this version: old message ids belong to a different chat. existing saved-message codes and signed links must stop resolving. keep the session/auth tables.
 
 - dropped folders are packaged into ZIP with zip.js in the browser; archive size is checked before packing and uploading. files stream to temporary disk, then enter a persistent, sequential telegram queue. codes appear after telegram confirms storage.
 - staging is limited to 4.5 gb; each file is limited to 4 gb (premium). uploads also check free disk space and keep a 256 mb reserve.
 - files and codes remain available until manual removal. downloads can run concurrently; deletion waits for active transfers.
 - manual removal revokes access immediately. cleanup retries telegram deletion every 30 seconds if telegram is unavailable.
-- documents, video and audio added to the private channel are imported automatically. existing history is scanned in the background. original captions are preserved and the code is appended with inline code formatting.
-- telegram stores the original documents in the private channel. manually deleting them there makes those files unavailable.
+- documents, video and audio added to connected chats are imported automatically. existing history is scanned in the background. the app appends share codes to captions it can edit.
+- use **settings → re-sync with telegram** to find missed files and clear entries for media deleted in telegram. removing a source hides its files and revokes their links until you reconnect it.
 - browser uploads retry connection/server errors, but do not resume a partial file after a page reload. files already received by the server continue processing.
 
 sqlite and the telegram session are required to recover file access. back up `/srv/tg-drop/data` and `/etc/tg-drop.env` while `tg-drop.service` is stopped, or use sqlite's online backup api. keep backups private. the vps stores metadata and temporary uploads; telegram is the final file store.

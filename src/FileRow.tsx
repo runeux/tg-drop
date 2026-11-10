@@ -17,6 +17,8 @@ import {
 import { formatSize, type DropFile } from '../shared/files';
 import { FileActionMenu, type FileMenuState } from './FileActionMenu';
 import { FileArtwork } from './FileArtwork';
+import { TagBadge } from './TagBadge';
+import type { Tag } from '../shared/settings';
 
 const generatedCode = /^(?:[2-9A-HJ-NP-Z]{4}-){3}[2-9A-HJ-NP-Z]{4}$/;
 
@@ -115,6 +117,7 @@ export function SavedFile({
       name={file.name}
       artwork={<FileArtwork file={file} />}
       size={file.size}
+      tag={file.tag}
       detail={status}
       open={downloadUrl ? (source) => openPreview(file.id, source) : undefined}
       error={failure}
@@ -224,6 +227,7 @@ export function FileRow({
   name,
   artwork,
   size,
+  tag,
   detail,
   open,
   progress,
@@ -236,6 +240,7 @@ export function FileRow({
   name: string;
   artwork: React.ReactNode;
   size: number;
+  tag?: Tag;
   detail?: string;
   open?: (source: PreviewSource) => void;
   progress?: number;
@@ -313,6 +318,7 @@ export function FileRow({
           </span>
         )}
         <span className="file-meta">
+          {tag && <TagBadge tag={tag} />}
           <span className="file-size">{formatSize(size)}</span>
           {detail && (
             <>

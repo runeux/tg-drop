@@ -23,7 +23,7 @@ export class Files {
   private queue = new PQueue({ concurrency: 1 });
   private scheduled = new Set<string>();
   private progress = new Map<string, number>();
-  private uploads = new Map<string, number>();
+  private uploads = new Map<string, { size: number; sourceId?: number }>();
   private downloading = new Map<string, number>();
   private collecting: Promise<void> | null = null;
   private collectAgain = false;
@@ -34,6 +34,7 @@ export class Files {
     private storage: FileStorage,
   ) {
     this.db = new FileDatabase(config.DATA_DIR);
+    if (config.STORAGE === 'telegram') this.db.migrateTelegramKeys();
   }
 
   path(id: string) {
@@ -41,8 +42,10 @@ export class Files {
   }
 
   async start() {
+    // telegram sync fills image metadata without blocking startup.
     for (const file of this.db.list()) {
       if (
+        this.config.STORAGE === 'telegram' ||
         file.status !== 'ready' ||
         !file.storageKey ||
         file.width ||
@@ -73,7 +76,7 @@ export class Files {
     for (const name of await readdir(join(this.config.DATA_DIR, 'staging'))) {
       if (!known.has(name)) await this.removeStaging(name);
     }
-    for (const file of this.db.pending()) this.enqueue(file.id);
+    this.resumeUploads();
     await this.collect();
     this.timer = setInterval(() => {
       void this.collect();
@@ -81,9 +84,36 @@ export class Files {
     this.timer.unref();
   }
 
+  resumeUploads() {
+    for (const file of this.db.pending()) this.enqueue(file.id);
+  }
+
+  hasPendingUploads(sourceIds: Set<number>) {
+    return [
+      ...this.uploads.values(),
+      ...this.db.list().filter(({ status }) => status !== 'ready'),
+    ].some(({ sourceId }) => sourceId != null && sourceIds.has(sourceId));
+  }
+
+  private visible(file: FileRecord, settings = this.db.readSettings()) {
+    return (
+      this.config.STORAGE !== 'telegram' ||
+      settings.sources.some(({ id }) => id === file.sourceId)
+    );
+  }
+
   list(): DropFile[] {
+    const settings = this.db.readSettings();
+    const tags = new Map(settings.tags.map((tag) => [tag.id, tag]));
+    const sourceTags = new Map(
+      settings.sources.map(({ id, tagId }) => [
+        id,
+        tagId ? tags.get(tagId) : undefined,
+      ]),
+    );
     return this.db.list().flatMap((file) => {
-      if (file.status === 'deleting') return [];
+      if (file.status === 'deleting' || !this.visible(file, settings))
+        return [];
       return [
         {
           id: file.id,
@@ -96,6 +126,7 @@ export class Files {
           createdAt: file.createdAt,
           status: file.status,
           progress: this.progress.get(file.id) ?? 0,
+          tag: file.sourceId ? sourceTags.get(file.sourceId) : undefined,
         },
       ];
     });
@@ -112,24 +143,30 @@ export class Files {
   ) {
     if (this.uploads.has(meta.id))
       throw new HttpError(409, 'This file is already uploading.');
+    const sourceId =
+      this.config.STORAGE === 'telegram'
+        ? this.db.readSettings().sources[0]?.id
+        : undefined;
+    if (this.config.STORAGE === 'telegram' && !sourceId)
+      throw new HttpError(409, 'Add a Telegram source before uploading.');
     const existing = this.db.get(meta.id);
     if (existing) {
       request.resume();
       return existing.id;
     }
     const reserved =
-      [...this.uploads.values()].reduce((a, b) => a + b, 0) +
+      [...this.uploads.values()].reduce((sum, { size }) => sum + size, 0) +
       this.db
         .list()
         .filter((file) => file.status !== 'ready')
         .reduce((sum, file) => sum + file.size, 0);
     if (reserved + meta.size > this.config.MAX_STAGING_BYTES)
       throw new HttpError(507, 'Upload queue is full. Try again shortly.');
-    this.uploads.set(meta.id, meta.size);
+    this.uploads.set(meta.id, { size: meta.size, sourceId });
     try {
       const disk = await statfs(this.config.DATA_DIR);
       const receiving = [...this.uploads.values()].reduce(
-        (sum, size) => sum + size,
+        (sum, { size }) => sum + size,
         0,
       );
       if (disk.bavail * disk.bsize < receiving + 256_000_000)
@@ -165,6 +202,7 @@ export class Files {
         code: generateCode(),
         status: 'queued',
         storageKey: null,
+        sourceId,
       });
       this.enqueue(meta.id);
       return meta.id;
@@ -179,7 +217,7 @@ export class Files {
 
   retry(id: string) {
     const file = this.db.get(id);
-    if (!file || file.status !== 'failed')
+    if (!file || !this.visible(file) || file.status !== 'failed')
       throw new HttpError(404, 'File not found.');
     this.db.update(id, { status: 'queued' });
     this.enqueue(id);
@@ -192,6 +230,14 @@ export class Files {
       .add(async () => {
         const file = this.db.get(id);
         if (!file || file.status !== 'queued') return;
+        if (this.config.STORAGE === 'telegram') {
+          const settings = this.db.readSettings();
+          const sourceId = file.sourceId ?? settings.sources[0]?.id;
+          if (!sourceId || !this.visible({ ...file, sourceId }, settings))
+            return;
+          file.sourceId = sourceId;
+          this.db.update(id, { sourceId });
+        }
         this.db.update(id, { status: 'storing' });
         try {
           const key = await this.storage.put(this.path(id), file, (value) =>
@@ -241,13 +287,19 @@ export class Files {
     const file =
       (code && this.db.byCode(code)) ||
       (generated && generated !== code && this.db.byCode(generated));
-    if (!file) throw new HttpError(404, 'Code not found.');
+    if (!file || !this.visible(file))
+      throw new HttpError(404, 'Code not found.');
     return file;
   }
 
   ready(id: string) {
     const file = this.db.get(id);
-    if (!file || file.status !== 'ready' || !file.storageKey)
+    if (
+      !file ||
+      !this.visible(file) ||
+      file.status !== 'ready' ||
+      !file.storageKey
+    )
       throw new HttpError(404, 'File not found.');
     return { ...file, storageKey: file.storageKey };
   }
@@ -276,7 +328,9 @@ export class Files {
   }
 
   delete(id: string) {
-    if (!this.db.get(id)) throw new HttpError(404, 'File not found.');
+    const file = this.db.get(id);
+    if (!file || !this.visible(file))
+      throw new HttpError(404, 'File not found.');
     this.db.update(id, { status: 'deleting' });
     void this.collect();
   }

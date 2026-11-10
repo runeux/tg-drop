@@ -457,7 +457,7 @@ button.file-name[data-peek-restored-focus]:focus-visible {
   grid-row: 1;
   min-width: 0;
 }
-.file-row-ready .file-meta > :not(.code-value) {
+.file-row-ready .file-meta > :not(.code-value, .tag-badge) {
   flex-shrink: 0;
 }
 .code-value {

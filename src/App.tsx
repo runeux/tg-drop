@@ -12,7 +12,7 @@ import { api, message, okSchema, sessionSchema } from './api';
 import { EntryForm } from './EntryForm';
 import { captureDrop, prepareDrop } from './selection';
 
-const Uploads = lazy(() => import('./Uploads'));
+const Workspace = lazy(() => import('./Workspace'));
 
 type Screen = 'loading' | 'entry' | 'upload';
 
@@ -241,7 +241,7 @@ export function App() {
                   </div>
                 }
               >
-                <Uploads
+                <Workspace
                   maxFileBytes={maxFileBytes}
                   pendingFiles={pendingFiles}
                   onPendingReceived={receivedPending}
