@@ -35,7 +35,11 @@ npm run telegram:login
 npm run dev
 ```
 
-setup prompts for an upload password and your api credentials. during telegram login, open the local url printed in the terminal and scan the qr code in telegram. after `npm run dev`, open [the local app](http://127.0.0.1:5173).
+setup prompts for an upload password and your api credentials. scan the qr code printed in your terminal from telegram under **settings → devices → link desktop device**. if prompted, enter your telegram 2fa password in the terminal.
+
+login saves `telegram.session` in `DATA_DIR`. the server reuses it on each start. run `npm run telegram:login` again if you revoke the session. after `npm run dev`, open [the local app](http://127.0.0.1:5173).
+
+use `npm run telegram:login -- --qr-image` to let an agent display the qr as an image. enter any 2fa password directly at the hidden prompt in the terminal running the command.
 
 for disk-only development, use `STORAGE=local npm run setup` in place of `npm run setup` and skip telegram login.
 

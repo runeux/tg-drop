@@ -1,8 +1,17 @@
-import { createServer } from 'node:http';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 import QRCode from 'qrcode';
 import { telegramClient } from '../server/storage/telegram.js';
-import { resolve } from 'node:path';
+import { question } from './terminal.js';
+
+const { values } = parseArgs({ options: { 'qr-image': { type: 'boolean' } } });
+
+if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  console.error('telegram login requires an interactive terminal');
+  process.exit(1);
+}
 
 const directory = resolve(process.env.DATA_DIR ?? './data');
 await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -12,90 +21,51 @@ const client = telegramClient({
   DATA_DIR: directory,
 });
 
-let qr = '';
-let done = false;
-let passwordResolve: ((password: string) => void) | undefined;
-const port = Number(process.env.SETUP_PORT ?? 8790);
-const origin = `http://127.0.0.1:${port}`;
+const imageDirectory = values['qr-image']
+  ? await mkdtemp(join(tmpdir(), 'tg-drop-qr-'))
+  : undefined;
+const abort = new AbortController();
+let qrWrite = Promise.resolve();
 
-const server = createServer(async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Frame-Options', 'DENY');
-  if (req.method === 'GET' && req.url === '/status') {
-    res.setHeader('Content-Type', 'application/json');
-    const status = { qr, done, password: Boolean(passwordResolve) };
-    res.end(JSON.stringify(status), () => {
-      if (status.done) server.close();
-    });
-    return;
-  }
-  if (req.method === 'POST' && req.url === '/password') {
-    if (
-      req.headers.origin !== origin ||
-      req.headers['content-type'] !== 'text/plain'
-    ) {
-      res.writeHead(403).end();
-      return;
-    }
-    let password = '';
-    for await (const chunk of req) {
-      password += String(chunk);
-      if (password.length > 1024) {
-        res.writeHead(413).end();
+const user = await client
+  .start({
+    abortSignal: abort.signal,
+    qrCodeHandler: (url, expires) => {
+      if (imageDirectory) {
+        const image = join(imageDirectory, 'telegram-qr.png');
+        const pending = `${image}.tmp`;
+        qrWrite = qrWrite
+          .then(async () => {
+            const png = await QRCode.toBuffer(url, { width: 400 });
+            await writeFile(pending, png, { mode: 0o600 });
+            await rename(pending, image);
+            console.log(
+              `telegram login qr: ${image} (expires ${expires.toISOString()})`,
+            );
+          })
+          .catch((error: unknown) => abort.abort(error));
         return;
       }
-    }
-    passwordResolve?.(password);
-    passwordResolve = undefined;
-    res.end();
-    return;
-  }
-  if (req.method !== 'GET' || req.url !== '/') {
-    res.writeHead(404).end();
-    return;
-  }
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.end(`<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>telegram · drop</title>
-    <style>:root{color-scheme:dark;font-family:system-ui;background:#090909;color:#eee}body{min-height:90vh;display:grid;place-items:center;margin:0}main{text-align:center}img{width:280px;border-radius:20px}p{color:#aaa;font-size:14px}input,button{font:inherit;border:0;background:#242424;color:#eee;border-radius:12px;padding:14px}button{cursor:pointer}form[hidden],img[hidden]{display:none}</style>
-    <main><img id="qr" alt="telegram login qr"><p id="label">telegram → settings → devices → link desktop device</p><form hidden><input type="password" placeholder="2FA password" autocomplete="current-password" aria-label="Telegram 2FA password" required><button>→</button></form></main>
-    <script>const image=document.querySelector('img'),form=document.querySelector('form'),label=document.querySelector('p');
-    const timer=setInterval(async()=>{const s=await fetch('/status').then(r=>r.json());if(s.qr&&image.src!==s.qr)image.src=s.qr;image.hidden=s.password||s.done;form.hidden=!s.password;label.textContent=s.done?'connected ✓':s.password?'telegram 2FA':'telegram → settings → devices → link desktop device';if(s.done)clearInterval(timer)},1000);
-    form.onsubmit=async e=>{e.preventDefault();await fetch('/password',{method:'POST',headers:{'Content-Type':'text/plain'},body:form.querySelector('input').value});form.reset()};</script></html>`);
-});
-server.listen(port, '127.0.0.1', () =>
-  console.log(`telegram setup: ${origin}`),
-);
 
-try {
-  await client.start({
-    qrCodeHandler: (url) => {
-      void QRCode.toDataURL(url, { width: 560, margin: 3 }).then((value) => {
-        qr = value;
+      QRCode.toString(url, { type: 'terminal', small: true }, (error, qr) => {
+        if (error) throw error;
+        console.clear();
+        console.log(qr);
+        console.log('telegram → settings → devices → link desktop device');
       });
     },
-    password: () =>
-      new Promise<string>((resolvePassword) => {
-        passwordResolve = resolvePassword;
-      }),
-    invalidCodeCallback: () => console.log('invalid password; try again'),
+    password: () => question('telegram 2fa password: ', true),
+    invalidCodeCallback: () => console.log('invalid password, try again'),
+  })
+  .finally(async () => {
+    try {
+      await client.destroy();
+    } finally {
+      await qrWrite;
+      if (imageDirectory)
+        await rm(imageDirectory, { recursive: true, force: true });
+    }
   });
-  await client.destroy();
-  done = true;
-  console.log('telegram connected');
-} catch (error) {
-  console.error(
-    error instanceof Error ? error.message : 'telegram login failed',
-  );
-  server.close();
-  await client.destroy();
-  process.exitCode = 1;
-}
 
-process.on('SIGTERM', () => {
-  server.close();
-  void client.destroy();
-});
-process.on('SIGINT', () => {
-  server.close();
-  void client.destroy();
-});
+console.log(`telegram connected as ${user.displayName}`);
+console.log(`session saved to ${resolve(directory, 'telegram.session')}`);

@@ -12,7 +12,19 @@ import { TelegramSync, telegramSyncPort } from './telegram-sync.js';
 const config = readConfig();
 await mkdir(config.DATA_DIR, { recursive: true, mode: 0o700 });
 const client = config.STORAGE === 'telegram' ? telegramClient(config) : null;
-if (client) await client.start({});
+if (client) {
+  const requireSession = () => {
+    throw new Error(
+      'telegram session missing or unauthorized. run npm run telegram:login with the same DATA_DIR before starting the server.',
+    );
+  };
+  try {
+    await client.start({ phone: requireSession, password: requireSession });
+  } catch (error) {
+    await client.destroy();
+    throw error;
+  }
+}
 const storage = client
   ? new TelegramStorage(client)
   : new LocalStorage(join(config.DATA_DIR, 'objects'));
