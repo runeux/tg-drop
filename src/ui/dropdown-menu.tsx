@@ -8,16 +8,22 @@ export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
 export function DropdownMenuContent({
   sideOffset = 4,
+  inline = false,
   ...props
-}: ComponentProps<typeof DropdownMenuPrimitive.Content>) {
-  return (
-    <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.Content
-        data-slot="dropdown-menu-content"
-        sideOffset={sideOffset}
-        {...props}
-      />
-    </DropdownMenuPrimitive.Portal>
+}: ComponentProps<typeof DropdownMenuPrimitive.Content> & {
+  inline?: boolean;
+}) {
+  const content = (
+    <DropdownMenuPrimitive.Content
+      data-slot="dropdown-menu-content"
+      sideOffset={sideOffset}
+      {...props}
+    />
+  );
+  return inline ? (
+    content
+  ) : (
+    <DropdownMenuPrimitive.Portal>{content}</DropdownMenuPrimitive.Portal>
   );
 }
 

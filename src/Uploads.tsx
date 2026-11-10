@@ -18,6 +18,7 @@ import {
 import { api, ApiError, message, okSchema } from './api';
 import { Library } from './Library';
 import { validateFile } from './selection';
+import type { SourceChats } from './use-source-chats';
 import { syncStatusSchema, type WorkspaceSettings } from '../shared/settings';
 import {
   SettingsDialog,
@@ -37,6 +38,7 @@ export default function Uploads({
   onUnauthorized,
   settings,
   settingsSaved,
+  sourceChats,
 }: {
   maxFileBytes: number;
   pendingFiles: File[];
@@ -44,6 +46,7 @@ export default function Uploads({
   onUnauthorized: () => void;
   settings: WorkspaceSettings;
   settingsSaved: (settings: WorkspaceSettings) => void;
+  sourceChats: SourceChats;
 }) {
   const [files, setFiles] = useState<ListedFile[]>([]);
   const [error, setError] = useState('');
@@ -434,7 +437,10 @@ export default function Uploads({
               aria-haspopup="dialog"
               title="Settings"
               whileTap={{ scale: 0.93 }}
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsOpen(true);
+                sourceChats.refresh();
+              }}
             >
               <Settings size={18} aria-hidden="true" />
             </motion.button>
@@ -486,6 +492,7 @@ export default function Uploads({
         <SettingsDialog close={() => setSettingsOpen(false)}>
           <SettingsForm
             settings={settings}
+            sourceChats={sourceChats}
             sync={{
               running: sync.running || startingSync,
               error: syncRequestError || sync.error,

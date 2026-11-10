@@ -7,14 +7,21 @@ import {
 import { api, ApiError, message } from './api';
 import Uploads from './Uploads';
 import { SettingsForm } from './WorkspaceSettings';
+import { useSourceChats } from './use-source-chats';
 
 export default function Workspace(
-  props: Omit<ComponentProps<typeof Uploads>, 'settings' | 'settingsSaved'>,
+  props: Omit<
+    ComponentProps<typeof Uploads>,
+    'settings' | 'settingsSaved' | 'sourceChats'
+  >,
 ) {
   const { onUnauthorized } = props;
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const sourceChats = useSourceChats(onUnauthorized);
+  const { refresh } = sourceChats;
+  const needsSetup = settings?.telegram && settings.sources.length === 0;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -31,6 +38,10 @@ export default function Workspace(
       });
     return () => controller.abort();
   }, [attempt, onUnauthorized]);
+
+  useEffect(() => {
+    if (needsSetup) refresh();
+  }, [needsSetup, refresh]);
 
   if (!settings)
     return error ? (
@@ -53,17 +64,25 @@ export default function Workspace(
       </div>
     );
 
-  if (settings.telegram && !settings.sources.length)
+  if (needsSetup)
     return (
       <div className="settings-setup">
         <SettingsForm
           settings={settings}
           setup
+          sourceChats={sourceChats}
           saved={setSettings}
           onUnauthorized={onUnauthorized}
         />
       </div>
     );
 
-  return <Uploads {...props} settings={settings} settingsSaved={setSettings} />;
+  return (
+    <Uploads
+      {...props}
+      settings={settings}
+      settingsSaved={setSettings}
+      sourceChats={sourceChats}
+    />
+  );
 }

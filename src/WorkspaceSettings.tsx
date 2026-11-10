@@ -1,15 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronLeft, LoaderCircle, RotateCw } from 'lucide-react';
-import { z } from 'zod';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { LoaderCircle, RotateCw, X } from 'lucide-react';
 import {
-  chatOptionSchema,
   workspaceSettingsSchema,
-  type ChatOption,
   type SyncStatus,
   type WorkspaceSettings,
 } from '../shared/settings';
 import { api, ApiError, message } from './api';
-import { HotkeyBadge } from './HotkeyBadge';
+import type { SourceChats } from './use-source-chats';
 import { SourceFields, type SourceDraft } from './SourceFields';
 import { TagFields } from './TagFields';
 import './settings.css';
@@ -30,6 +27,7 @@ export function SettingsDialog({
   close: () => void;
   children: React.ReactNode;
 }) {
+  const title = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const backdropPress = useRef(false);
   useLayoutEffect(() => {
@@ -40,7 +38,7 @@ export function SettingsDialog({
   return (
     <dialog
       className="settings-dialog"
-      aria-label="Settings"
+      aria-labelledby={title}
       ref={dialog}
       onClose={close}
       onPointerDown={(event) => {
@@ -52,14 +50,17 @@ export function SettingsDialog({
       }}
     >
       <div className="settings-panel">
-        <button
-          type="button"
-          className="settings-quiet settings-back"
-          onClick={close}
-        >
-          <ChevronLeft size={15} aria-hidden="true" /> back{' '}
-          <HotkeyBadge>Esc</HotkeyBadge>
-        </button>
+        <header className="settings-header">
+          <h1 id={title}>settings</h1>
+          <button
+            type="button"
+            className="row-action settings-close"
+            aria-label="Close settings"
+            onClick={close}
+          >
+            <X size={17} aria-hidden="true" />
+          </button>
+        </header>
         {children}
       </div>
     </dialog>
@@ -69,6 +70,7 @@ export function SettingsDialog({
 export function SettingsForm({
   settings,
   setup = false,
+  sourceChats,
   sync,
   resync,
   saved,
@@ -76,6 +78,7 @@ export function SettingsForm({
 }: {
   settings: WorkspaceSettings;
   setup?: boolean;
+  sourceChats: SourceChats;
   sync?: SyncStatus;
   resync?: () => void;
   saved: (settings: WorkspaceSettings) => void;
@@ -92,33 +95,9 @@ export function SettingsForm({
       : [{ key: 'first', id: null, tagId: null }],
   );
   const [tags, setTags] = useState(settings.tags);
-  const [chats, setChats] = useState<ChatOption[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [chatError, setChatError] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void api(
-      '/settings/chats',
-      z.object({ chats: z.array(chatOptionSchema) }),
-      { signal: controller.signal },
-    )
-      .then(({ chats }) => {
-        if (!controller.signal.aborted) setChats(chats);
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (error instanceof ApiError && error.status === 401) onUnauthorized();
-        else setChatError(message(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [attempt, onUnauthorized]);
+  const { chats, refreshing, error: chatError, refresh } = sourceChats;
 
   const options = new Map(
     settings.sources.map(({ id, title }) => [id, { id, title }]),
@@ -164,39 +143,36 @@ export function SettingsForm({
         void save();
       }}
     >
-      <h1>{setup ? 'connect telegram' : 'settings'}</h1>
-      {setup && <p>choose where to keep and find your files</p>}
+      {setup && (
+        <div className="settings-intro">
+          <h1>connect telegram</h1>
+          <p>choose where to keep and find your files</p>
+        </div>
+      )}
       <section className="settings-section" aria-label="Sources">
-        <h2>sources</h2>
+        <h2 className="source-heading">
+          sources
+          {refreshing && (
+            <span role="status" aria-label="Refreshing chats">
+              <LoaderCircle size={12} className="spinning" aria-hidden="true" />
+            </span>
+          )}
+        </h2>
         <SourceFields
           sources={sources}
           chats={[...options.values()]}
           tags={tags}
           change={setSources}
-          busy={saving || loading}
+          busy={saving}
         />
-        {loading && (
-          <p role="status">
-            <LoaderCircle size={14} className="spinning" /> loading chats…
-          </p>
-        )}
         {chatError && (
-          <p role="alert">
+          <p className="settings-retry" role="alert">
             {chatError}
-            <button
-              type="button"
-              className="settings-quiet"
-              onClick={() => {
-                setChatError('');
-                setLoading(true);
-                setAttempt((value) => value + 1);
-              }}
-            >
+            <button type="button" className="settings-quiet" onClick={refresh}>
               retry
             </button>
           </p>
         )}
-        <p>uploads go to the first source</p>
       </section>
       {!setup && (
         <>
@@ -217,7 +193,13 @@ export function SettingsForm({
             />
           </section>
           <section className="settings-section" aria-label="Sync">
-            <h2>sync</h2>
+            <div className="settings-section-intro">
+              <h2>sync</h2>
+              <p>
+                find missed files and remove entries for files deleted in
+                telegram.
+              </p>
+            </div>
             <button
               type="button"
               className="settings-secondary"

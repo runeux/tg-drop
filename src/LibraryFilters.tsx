@@ -25,7 +25,10 @@ function FilterSection({ group }: { group: FilterGroup }) {
     const next = new Set(selected);
     if (!next.delete(id)) next.add(id);
     change(
-      !group.includesUnlisted && next.size === options.length ? null : next,
+      next.size === 0 ||
+        (!group.includesUnlisted && next.size === options.length)
+        ? null
+        : next,
     );
   }
 
@@ -110,11 +113,10 @@ export function ActiveFilters({ groups }: { groups: FilterGroup[] }) {
           .filter(({ id }) => selected?.has(id))
           .map((option) => option.label);
         const extra = names.length - 2;
-        const summary = names.length
-          ? [...names.slice(0, 2), ...(extra > 0 ? [`+${extra}`] : [])].join(
-              ', ',
-            )
-          : `no ${label} selected`;
+        const summary = [
+          ...names.slice(0, 2),
+          ...(extra > 0 ? [`+${extra}`] : []),
+        ].join(', ');
         return (
           <button
             type="button"

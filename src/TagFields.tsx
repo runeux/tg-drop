@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
 import { tagColors, type Tag } from '../shared/settings';
 
 const colors = Object.keys(tagColors).filter(isColor);
@@ -44,7 +44,9 @@ function TagColor({
               change(name);
               event.currentTarget.parentElement?.hidePopover();
             }}
-          />
+          >
+            {tag.color === name && <Check size={14} aria-hidden="true" />}
+          </button>
         ))}
       </div>
     </>

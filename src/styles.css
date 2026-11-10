@@ -48,10 +48,15 @@ a {
 button:disabled {
   cursor: default;
 }
+:focus-visible {
+  outline: none;
+}
 button:focus-visible,
-a:focus-visible {
-  outline: 1px solid #8b8b94;
-  outline-offset: 3px;
+a[href]:focus-visible {
+  background-image: linear-gradient(#ffffff18, #ffffff18);
+}
+:is(.download-button, .submit-button):focus-visible {
+  background-image: linear-gradient(#0002, #0002);
 }
 button {
   transition:
@@ -215,9 +220,6 @@ button {
 .code-submit:disabled {
   color: var(--label-tertiary);
 }
-.code-submit:focus-visible {
-  outline-offset: -4px;
-}
 .entry-input-row .code-submit {
   flex-basis: 48px;
   height: 48px;
@@ -296,14 +298,11 @@ button {
   gap: 7px;
   min-height: 44px;
   padding: 0 12px;
+  border-radius: 6px;
   background: transparent;
   color: var(--label-secondary);
   font-size: 12px;
   white-space: nowrap;
-}
-.entry-reset:focus-visible {
-  outline-offset: -3px;
-  border-radius: 6px;
 }
 .entry-reset-arrow {
   transform: translateY(2px);
@@ -321,10 +320,6 @@ button {
   top: 8px;
   right: 8px;
   text-decoration: none;
-}
-.download-button:focus-visible {
-  outline-offset: -4px;
-  outline-color: #1c1c1e;
 }
 
 .screen-upload {
@@ -416,6 +411,7 @@ button {
   line-height: 1.35;
 }
 button.file-name {
+  border-radius: 3px;
   width: fit-content;
   max-width: 100%;
   padding: 0;
@@ -423,7 +419,7 @@ button.file-name {
   text-align: left;
 }
 button.file-name[data-peek-restored-focus]:focus-visible {
-  outline: none;
+  background-image: none;
   color: var(--label-primary);
 }
 .file-stem {
